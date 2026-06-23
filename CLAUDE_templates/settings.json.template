@@ -1,0 +1,89 @@
+{
+  "_": "=== CLS Cognitive Loop — settings.json Template ===",
+  "_": "Copy to {PROJECT_ROOT}/.claude/settings.json and fill in {PLACEHOLDER} values",
+
+  "env": {
+    "CLS_ROOT": "{PROJECT_ROOT}",
+    "CLAUDE_CODE_TMPDIR": "{PROJECT_ROOT}/temp/cc_tmp",
+    "QWEN_API_ENDPOINT": "{QWEN_API_ENDPOINT}",
+    "QWEN_API_KEY": "{QWEN_API_KEY}"
+  },
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "path": "{PROJECT_ROOT}/.claude/hooks/PreToolUse.ps1",
+        "description": "COG_STEP declaration check + FUSE_BOARD basic gates"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "path": "{PROJECT_ROOT}/.claude/hooks/PostToolUse.ps1",
+        "description": "Symbolic dynamics capture + trajectory update + audit logging"
+      }
+    ],
+    "SessionStart": [
+      {
+        "path": "{PROJECT_ROOT}/.claude/hooks/SessionStart.ps1",
+        "description": "Situational awareness (step 1) + cross-window peek + health check"
+      }
+    ]
+  },
+
+  "projects": {
+    "{PROJECT_NAME}": {
+      "root": "{PROJECT_ROOT}",
+      "type": "cls-cognitive-loop",
+      "memory": "{PROJECT_ROOT}/data/memory",
+      "rules": "{PROJECT_ROOT}/rules"
+    }
+  },
+
+  "mcpServers": {
+    "qwen-gate": {
+      "command": "python",
+      "args": ["{PROJECT_ROOT}/scripts/core-engine/qwen_gate.py", "--serve"],
+      "env": {
+        "QWEN_API_ENDPOINT": "{QWEN_API_ENDPOINT}",
+        "QWEN_API_KEY": "{QWEN_API_KEY}"
+      }
+    },
+    "fuse-board": {
+      "command": "python",
+      "args": ["{PROJECT_ROOT}/scripts/core-engine/fuse_board.py", "--daemon"]
+    },
+    "symbolic_dynamics": {
+      "command": "python",
+      "args": ["{PROJECT_ROOT}/scripts/safety/symbolic_dynamics_engine.py", "--daemon"]
+    }
+  },
+
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(git *)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ],
+    "ask": [
+      "Bash(*)"
+    ]
+  },
+
+  "_placeholders": {
+    "{PROJECT_ROOT}": "Absolute path to your CLS project root",
+    "{PROJECT_NAME}": "Your project name",
+    "{QWEN_API_ENDPOINT}": "Qwen API endpoint URL for dual-AI gate",
+    "{QWEN_API_KEY}": "Qwen API key (keep secret, never commit)",
+    "{GENERATOR_MODEL}": "Your primary LLM model (e.g. deepseek-chat)",
+    "{EVALUATOR_MODEL}": "Your verification LLM model (e.g. qwen-max)",
+    "{MAX_RECURSION_DEPTH}": "Max recursion depth (recommended: 5)",
+    "{SESSION_TOKEN_BUDGET}": "Max tokens per session (recommended: 500000)",
+    "{DAILY_TOKEN_BUDGET}": "Max tokens per day (recommended: 2000000)",
+    "{MAX_PARALLEL_TASKS}": "Max concurrent parallel ops (recommended: 3)",
+    "{CHECKPOINT_INTERVAL_SEC}": "Checkpoint interval in seconds (recommended: 300)"
+  }
+}
