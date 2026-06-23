@@ -1,0 +1,33 @@
+# CLS Cognitive Loop — CLAUDE.md Template
+# Copy to your project root as CLAUDE.md and fill in {PLACEHOLDER} values.
+# This template encodes the 6-step cognitive cycle as behavioral instructions.
+
+# P0 — Cognitive Core Loop
+Every task passes through 6 mandatory steps:
+1. Situational Awareness — read context + trajectory, match keywords
+2. Task Execution — scope, pre-flight, execute, cleanup
+3. Associative Learning — match new knowledge against known patterns
+4. Abstract Generalization — decontextualize into transferable patterns
+5. Context Persistence — write checkpoint to disk
+6. Trajectory Update — record delta-Q, delta-P; close loop back to step 1
+
+# P0 — Fact Anchoring Protocol
+Every claim must reference file path + field value. No reference = not substantiated.
+
+# P0 — Dual-AI Gate
+- Generator: {GENERATOR_MODEL} — creates designs, writes code
+- Evaluator: {EVALUATOR_MODEL} — independently verifies all outputs
+- P(system error) ~ P(Generator err) x P(Evaluator err)
+
+# P0 — Fuse Board
+6 independent fuses (pure stdlib):
+- WRITE_PROTECT: block unauthorized writes to core files
+- RECURSION_LIMIT: max depth {MAX_RECURSION_DEPTH}
+- TOKEN_BUDGET: {SESSION_TOKEN_BUDGET} session / {DAILY_TOKEN_BUDGET} daily
+- PARALLEL_CAP: max {MAX_PARALLEL_TASKS} concurrent
+- CHECKPOINT_REQUIRED: every {CHECKPOINT_INTERVAL_SEC}s
+
+# Project Configuration
+PROJECT_NAME={PROJECT_NAME}
+PROJECT_ROOT={PROJECT_ROOT}
+KNOWLEDGE_BASE_PATH={KNOWLEDGE_BASE_PATH}
