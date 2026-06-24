@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: "CLS Cognitive Loop: Monitoring LLM Agent Behavior with Symbolic Dynamics"
+message: "If you use this software or paper, please cite it as below."
+type: software
+authors:
+  - name: "Cognitive Workshop"
+version: "1.0"
+date-released: 2026-06-24
+url: "https://github.com/zyc1419456542/cls-cognitive-loop"
+repository-code: "https://github.com/zyc1419456542/cls-cognitive-loop"
+abstract: "A 6-step agent harness with symbolic dynamics behavioral monitoring, 7 lifecycle hooks, dual-AI verification gate, and stdlib-only fuse board."
+keywords:
+  - "LLM agent"
+  - "symbolic dynamics"
+  - "cognitive loop"
+  - "behavioral monitoring"
+  - "hallucination detection"
+  - "agent harness"
+license: Apache-2.0
