@@ -1,5 +1,7 @@
 # CLS Cognitive Loop
 
+[![DOI](https://zenodo.org/badge/1278055077.svg)](https://doi.org/10.5281/zenodo.20830497)
+
 > An LLM agent runtime framework that structures reasoning into a verifiable 6-step cognitive cycle — with dual-model cross-verification, stdlib-only circuit breakers, and cross-session state persistence.
 
 ---
