@@ -12,6 +12,6 @@
 | 5 | 无证据不可运行 | 证据缺失加载结构 | 验证证据文件存在 |
 
 ## 文件锚点
-- `scripts/wheels/premise_check.py`
-- `data/safety/fact_anchoring_protocol.json`
+- `scripts/core-engine/premise_check.py`
+- `data/safety-configs/fact_anchoring_protocol.json`
 - `data/safety/premise_log.jsonl`

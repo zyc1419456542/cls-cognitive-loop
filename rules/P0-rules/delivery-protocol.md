@@ -17,7 +17,7 @@
 ```
 - 根目录只允许 `{DESIGN_DIR}/` 和 `📚学习资料/`
 - **强制 `--category`**，禁止 root 写入，禁止绕过 delivery_check.py
-- 事后卫生: `python scripts/wheels/delivery_check.py --hygiene`
+- 事后卫生: `python scripts/core-engine/delivery_check.py --hygiene`
 
 ## 抗僵化协议
 - 连续3+轮零失败 → 信任分衰减(最高-0.05)
@@ -25,6 +25,6 @@
 - 接口对齐优于加新结构
 
 ## 文件锚点
-- `scripts/wheels/delivery_check.py`
-- `scripts/fuse_board.py`
+- `scripts/core-engine/delivery_check.py`
+- `scripts/core-engine/fuse_board.py`
 - `data/safety/self_eval_exceptions.jsonl`

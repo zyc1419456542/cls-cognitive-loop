@@ -1,7 +1,7 @@
 # CLS Cognitive Cycle -- The 6-Step Loop in Depth
 
 **Component**: Cognitive Core Loop
-**Defined in**: data/workflows/general/cognitive_core_loop.json (v21, created 2026-05-25)
+**Defined in**: workflows/cognitive_core_loop.json (v21, created 2026-05-25)
 
 ---
 
@@ -37,7 +37,7 @@ Session start, or user message arrives.
 
 4. **Read trajectory**: Load state/trajectory.json. Extract position, mass, and momentum from the previous session. This is how the system knows "what were we doing?" without the user repeating context.
 
-5. **CLS Memory search**: Run scripts/wheels/cls_memory.py with task domain keywords. Return top-5 matching lessons.
+5. **CLS Memory search**: Run scripts/core-engine/cls_memory.py with task domain keywords. Return top-5 matching lessons.
 
 6. **Cross-window peek**: Call cross_window_hook.auto_peek() to see what other Claude Code windows are doing. Output includes each window's status, focus, and time since last update.
 
@@ -267,7 +267,7 @@ At every natural break point, three questions fire automatically:
 
 1. **Can this be parallelized?** -- Are there independent sub-tasks that can run concurrently?
 2. **Was the last step correct?** -- Glance at the output of the previous tool call. Error? Empty? Unexpected? Stop and fix before proceeding.
-3. **Can an existing interface be reused?** -- Before writing new code, check scripts/wheels/ for existing functionality.
+3. **Can an existing interface be reused?** -- Before writing new code, check scripts/core-engine/ for existing functionality.
 
 These are not decisions the model makes consciously each time. They are inertial -- wired into the natural break points so they fire without deliberation.
 
@@ -362,19 +362,19 @@ Windows that have not updated last_seen within a freshness threshold are filtere
 
 | File | Role |
 |------|------|
-| data/workflows/general/cognitive_core_loop.json | Full loop definition (135 lines, v21) |
-| scripts/wheels/cognitive_core_loop.py | Loop execution engine |
-| scripts/wheels/strategy_selector.py | P1/P2/P3 path selection |
-| scripts/wheels/epsilon_gate.py | Epsilon-greedy exploration |
-| scripts/wheels/path_mutation.py | Execution path mutation |
-| scripts/wheels/external_anchor.py | Anti-closure external sampling |
-| scripts/wheels/cross_window_hook.py | Cross-window coordination |
-| scripts/cross_window_awareness.py | Window peek/announce/cover core |
-| scripts/wheels/premise_check.py | Upstream premise verification |
-| scripts/wheels/cls_memory.py | Memory search and retrieval |
-| scripts/wheels/knowledge_quality_gate.py | Knowledge entry quality scoring |
-| scripts/anti_atrophy_consumer.py | Forgetting curve + re-injection |
-| scripts/wheels/compact_health_board.py | Compact threshold checking |
+| workflows/cognitive_core_loop.json | Full loop definition (135 lines, v21) |
+| scripts/core-engine/cognitive_core_loop.py | Loop execution engine |
+| scripts/core-engine/strategy_selector.py | P1/P2/P3 path selection |
+| scripts/core-engine/epsilon_gate.py | Epsilon-greedy exploration |
+| scripts/core-engine/path_mutation.py | Execution path mutation |
+| scripts/core-engine/external_anchor.py | Anti-closure external sampling |
+| scripts/core-engine/cross_window_hook.py | Cross-window coordination |
+| scripts/core-engine/cross_window_awareness.py | Window peek/announce/cover core |
+| scripts/core-engine/premise_check.py | Upstream premise verification |
+| scripts/core-engine/cls_memory.py | Memory search and retrieval |
+| scripts/core-engine/knowledge_quality_gate.py | Knowledge entry quality scoring |
+| scripts/core-engine/anti_atrophy_consumer.py | Forgetting curve + re-injection |
+| scripts/core-engine/compact_health_board.py | Compact threshold checking |
 | state/trajectory.json | Cross-session position/mass/momentum |
 | state/activation_state.json | Cold/warm start state |
 | state/active_context | Session working memory |

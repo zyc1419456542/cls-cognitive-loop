@@ -3,15 +3,15 @@
 audit_gate.py — 审计声明强制验证器
 
 用法（供 PreToolUse / PostToolUse 调）:
-  python scripts/wheels/audit_gate.py check "工具名称" "命令/内容"
+  python scripts/safety/audit_gate.py check "工具名称" "命令/内容"
   → 返回 {"ok": true/false, "reason": "..."}
 
 设计：
   当检测到工具调用内容中含"审计""audit"等关键词时，
-  检查 state/.audit_done 是否存在且新鲜（≤10分钟）。
-  不存在/过期 → 拒绝。存在 → 放行。
+  检查 data/audit/.audit_done 是否存在且新鲜（<=10分钟）。
+  不存在/过期 -> 拒绝。存在 -> 放行。
 
-  唯一的例外：调用 forced_audit.py 本身（写 .audit_done 的行为）。
+  唯一的例外：调用 audit 工具本身（写 .audit_done 的行为）。
 """
 import json, os, sys, time
 from pathlib import Path
@@ -44,12 +44,12 @@ def check(tool_name: str, content: str) -> dict:
         return {"ok": True, "reason": "no audit claim detected"}
 
     # 检查 .audit_done 标志文件
-    flag_path = ROOT / "state" / ".audit_done"
+    flag_path = ROOT / "data" / "audit" / ".audit_done"
     if not flag_path.exists():
         return {
             "ok": False,
             "reason": f"[AUDIT_GATE] 检测到审计声明，但未找到审计标志文件。必须先执行:\n"
-                      f"  python scripts/wheels/forced_audit.py --prompt \"审计内容\"\n"
+                      f"  python scripts/safety/forced_audit.py --prompt \"审计内容\"\n"
                       f"声称审计但不实际调用外部 API = 违规。"
         }
 
@@ -63,7 +63,7 @@ def check(tool_name: str, content: str) -> dict:
             return {
                 "ok": False,
                 "reason": f"[AUDIT_GATE] 审计标志已过期 ({int(age)}s > {AUDIT_TTL}s TTL)。请重新执行:\n"
-                          f"  python scripts/wheels/forced_audit.py --prompt \"审计内容\""
+                          f"  python scripts/safety/forced_audit.py --prompt \"审计内容\""
             }
 
         return {"ok": True, "reason": f"audit done ({int(age)}s ago, content_hash={flag.get('content_hash','?')})"}

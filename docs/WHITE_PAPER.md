@@ -3,7 +3,7 @@
 > **An autonomous cognitive architecture that structures LLM agent reasoning into a provable 6-step closed loop — with dual-AI verification, circuit-breaker safety, and cross-session learning.**
 
 **Author:** Cognitive Workshop (认知工坊)
-**Contact:** QQ 1419456542 · zyc2018@mail.ustc.edu.cn
+**Contact:** [GitHub Discussions](https://github.com/zyc1419456542/cls-cognitive-loop/discussions)
 **Version:** 1.0 · June 2026
 
 ---
@@ -179,14 +179,14 @@ CLS addresses this with the Cross-Window Coordination Protocol (Section 8): a sh
 Safety in CLS is not a feature — it is a layer that the cognitive system cannot modify. Three independent layers stack, each with a different protection mechanism:
 
 ```
-Layer 1: PreToolUse Hook (.claude/hooks/PreToolUse.ps1)
+Layer 1: PreToolUse Hook (CLAUDE_templates/pre-tool-hook.template.ps1)
   Runs before every tool call. 17+ checks including:
   COMPUTE_GATE, LIFE_CLAIM, FAKE_MODEL, COG_STEP, FUSE_CHECK,
   CACHE_DISCIPLINE, RETRIEVAL_BYPASS, SYMBOLIC, CROSS_WINDOW,
   KEY_SCAN, C_DRIVE_GUARD, KNOWLEDGE_QUALITY, and more.
   Design: fail-open with auditable deny.
 
-Layer 2: Dual-AI Gate (scripts/safety/qwen_gate.py)
+Layer 2: Dual-AI Gate (scripts/core-engine/qwen_gate.py)
   Generator (DeepSeek) creates designs, code, knowledge entries.
   Evaluator (Qwen) independently verifies outputs with fresh context.
   Statistical guarantee: p(error) ≈ p(DS err) × p(QW err).
@@ -584,7 +584,7 @@ The loop is not a scheduler. It does not run on a timer. It runs on **natural br
 
 1. **Can this be parallelized?** — Are there independent sub-tasks that can run concurrently? If yes, fan out.
 2. **Was the last step correct?** — Glance at the output of the previous tool call. Error? Empty? Unexpected output? Stop and fix before proceeding.
-3. **Can an existing interface be reused?** — Before writing new code, check `scripts/wheels/` for existing functionality that already solves this problem.
+3. **Can an existing interface be reused?** — Before writing new code, check `scripts/core-engine/` for existing functionality that already solves this problem.
 
 These are inertial mechanics — wired into the natural break points so they fire without deliberation. The model does not need to "remember" to check; the structure enforces the check.
 
@@ -683,7 +683,7 @@ Verification is not performed on every output — it is triggered based on risk 
 
 ### 5.7 Implementation
 
-Implemented in `scripts/safety/qwen_gate.py` (~48KB). Three verification entry points:
+Implemented in `scripts/core-engine/qwen_gate.py` (~48KB). Three verification entry points:
 
 ```python
 def verify_cad_design(design_spec: dict, constraints: list) -> GateVerdict:
@@ -733,7 +733,7 @@ Each fuse corresponds to a real production incident that occurred before the fus
 | `PROXY_PURITY` | Semantic transformation in the proxy layer | Only allow field deletion (`reasoning_effort`, `thinking`); forbid all other modifications | Block content modification | P07: total system crash from proxy-layer semantic mutation injecting malformed tokens |
 | `SELF_EVALUATION_PROHIBITED` | Creator judging its own creation | Pattern match against forbidden phrases: "verified," "checked," "confirmed," "correct" | Block delivery | The system repeatedly self-certified incorrect outputs as "verified and correct" |
 | `DUAL_AI_GATE` | Unverified outputs bypassing the verification gate | Any CAD, knowledge, or deliverable output without prior Qwen verification | Block until verified | Regression to single-model hallucination patterns when gate was temporarily disabled |
-| `NUMERIC_COMPUTATION` | Math performed in model reasoning instead of verified scripts | Any computation not routed through a registered `scripts/wheels/` endpoint | Block computation | Floating-point errors and algebraic mistakes invisible in text generation |
+| `NUMERIC_COMPUTATION` | Math performed in model reasoning instead of verified scripts | Any computation not routed through a registered `scripts/core-engine/` endpoint | Block computation | Floating-point errors and algebraic mistakes invisible in text generation |
 | `QWEN_DOWN_TOO_LONG` | Extended verification gap | Qwen API unavailable > 30 minutes | Block mission-critical outputs | Knowledge and design quality degrades without cross-check during extended outages |
 
 ### 6.3 Configuration Design
@@ -746,10 +746,10 @@ All fuse thresholds are configured in `data/safety-configs/fuses_config.json`, n
     "action": "block",
     "protected": [
       "scripts/core-engine/fuse_board.py",
-      "scripts/self_activate.py",
-      ".claude/hooks/PreToolUse.ps1",
+      "scripts/core-engine/self_activate.py",
+      "CLAUDE_templates/pre-tool-hook.template.ps1",
       "data/safety-configs/fuses_config.json",
-      "scripts/safety/qwen_gate.py",
+      "scripts/core-engine/qwen_gate.py",
       "data/memory/CLAUDE.md"
     ]
   },
@@ -1075,8 +1075,8 @@ Crash/abandon  →  (detected by stale cleanup)
 
 ### 8.6 Implementation
 
-- `scripts/wheels/cross_window_hook.py` — Integration-point methods: `auto_peek()`, `cover_check()`, `announce()`, `auto_update()`, `update_from_tool()`, `remove_self()`
-- `scripts/cross_window_awareness.py` — Core protocol implementation: shared state management, serialization, stale pruning
+- `scripts/core-engine/cross_window_hook.py` — Integration-point methods: `auto_peek()`, `cover_check()`, `announce()`, `auto_update()`, `update_from_tool()`, `remove_self()`
+- `scripts/core-engine/cross_window_awareness.py` — Core protocol implementation: shared state management, serialization, stale pruning
 - `state/cross_window_context.json` — Shared state file, read/written by all windows
 
 ### 8.7 Concurrency Safety
@@ -1102,7 +1102,7 @@ The solution must be external: enforce that every system-state claim cites a ver
 ### 9.2 Three-Layer Floodgate
 
 ```
-Layer 1: UPSTREAM PREMISE GATE (scripts/wheels/premise_check.py)
+Layer 1: UPSTREAM PREMISE GATE (scripts/core-engine/premise_check.py)
   Before any operation, verifies:
   - Files exist at claimed paths (os.path.exists)
   - PIDs referenced are actually alive (psutil or tasklist)
@@ -1116,7 +1116,7 @@ Layer 2: MIDSTREAM CLAIM ANCHOR
   Claims without anchors are rejected by PreToolUse CHECK 4 (LIFE_CLAIM)
   and CHECK 6 (LLM_SOURCE).
 
-Layer 3: DOWNSTREAM QWEN VERIFY (scripts/safety/qwen_gate.py)
+Layer 3: DOWNSTREAM QWEN VERIFY (scripts/core-engine/qwen_gate.py)
   Qwen audit prompt includes explicit instruction to reject unanchored
   claims. The evaluator model is told: "Claims without specific file
   references and field values are unsubstantiated. Reject them."
@@ -1196,7 +1196,7 @@ The PreToolUse hook (`CLAUDE_templates/pre-tool-hook.template.ps1`) intercepts e
         "hooks": [
           {
             "type": "command",
-            "command": "pythonw .claude/hooks/PreToolUse.ps1"
+            "command": "pythonw CLAUDE_templates/pre-tool-hook.template.ps1"
           }
         ]
       }
@@ -1249,19 +1249,19 @@ Daemons are started by `self_activate.py` during cold start and monitored for li
 python scripts/core-engine/fuse_board.py --test
 
 # Run the symbolic dynamics engine on sample data
-python scripts/safety/symbolic_dynamics_engine.py --test
+python scripts/core-engine/symbolic_dynamics_engine.py --test
 
 # Check that the dual-AI gate can initialize (requires API access)
-python scripts/safety/qwen_gate.py --health
+python scripts/core-engine/qwen_gate.py --health
 
 # Test cross-window coordination
-python scripts/cross_window_awareness.py --test
+python scripts/core-engine/cross_window_awareness.py --test
 
 # Validate premise checking
-python scripts/wheels/premise_check.py --test
+python scripts/core-engine/premise_check.py --test
 
 # Verify trajectory integrity
-python scripts/wheels/trajectory_validator.py --check
+python scripts/core-engine/trajectory_validator.py --check
 ```
 
 ### 10.4 Getting Started Workflow
@@ -1281,7 +1281,7 @@ python scripts/wheels/trajectory_validator.py --check
 3. **Copy configuration templates:**
    ```bash
    cp CLAUDE_templates/CLAUDE.md.template ~/.claude/CLAUDE.md
-   cp CLAUDE_templates/pre-tool-hook.template.ps1 ~/.claude/hooks/PreToolUse.ps1
+   cp CLAUDE_templates/pre-tool-hook.template.ps1 ~/CLAUDE_templates/pre-tool-hook.template.ps1
    ```
 
 4. **Validate the installation:**
@@ -1358,7 +1358,7 @@ The CLS Cognitive Loop emerged from daily practice — building a reliable AI en
 ### 12.2 Contact
 
 - **QQ:** 1419456542
-- **Email:** zyc2018@mail.ustc.edu.cn
+- **Contact:** [GitHub Discussions](https://github.com/zyc1419456542/cls-cognitive-loop/discussions)
 - **Repository:** [github.com/cognitive-workshop/cls-cognitive-loop](https://github.com/cognitive-workshop/cls-cognitive-loop)
 
 For technical questions, architecture proposals, bug reports, or collaboration inquiries, please reach out via email with "CLS" in the subject line. Issues and pull requests are welcome on the repository.

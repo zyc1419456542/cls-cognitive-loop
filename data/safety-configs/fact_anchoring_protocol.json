@@ -8,7 +8,7 @@
       "name": "上游前提闸",
       "order": 1,
       "desc": "操作前检查物理前提——文件、进程、PID必须存在",
-      "wheel": "scripts/wheels/premise_check.py",
+      "wheel": "scripts/core-engine/premise_check.py",
       "commands": {
         "activate": "检查激活前提",
         "revive": "检查复活前提（最严格）",
@@ -38,9 +38,9 @@
   ],
   "premise_log": "data/safety/premise_log.jsonl",
   "related_wheels": [
-    "scripts/wheels/premise_check.py",
-    "scripts/wheels/qwen_gate.py",
-    "scripts/fuse_board.py"
+    "scripts/core-engine/premise_check.py",
+    "scripts/core-engine/qwen_gate.py",
+    "scripts/core-engine/fuse_board.py"
   ],
   "triggers": [
     "自指激活",

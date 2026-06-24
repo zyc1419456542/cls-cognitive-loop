@@ -30,8 +30,8 @@
     "resurrect_cooldown_min": 5,
     "_resurrect_cooldown_note": "5分钟内不重复尝试复活同一daemon，防重启风暴",
     "scripts": {
-      "session_lifecycle": "scripts/session_lifecycle.py",
-      "msgs_watchdog": "scripts/msgs_watchdog.ps1"
+      "session_lifecycle": "scripts/core-engine/session_lifecycle.py",
+      "msgs_watchdog": "scripts/core-engine/msgs_watchdog.ps1"
     }
   },
 
@@ -161,11 +161,11 @@
   },
 
   "files": {
-    "config": "data/safety/compact_health_config.json",
-    "health_board": "scripts/wheels/compact_health_board.py",
-    "watchdog_script": "scripts/msgs_watchdog.ps1",
-    "session_lifecycle": "scripts/session_lifecycle.py",
-    "self_activate": "scripts/self_activate.py",
+    "config": "data/safety-configs/compact_health_config.json",
+    "health_board": "scripts/core-engine/compact_health_board.py",
+    "watchdog_script": "scripts/core-engine/msgs_watchdog.ps1",
+    "session_lifecycle": "scripts/core-engine/session_lifecycle.py",
+    "self_activate": "scripts/core-engine/self_activate.py",
     "session_health": "state/session_health.json",
     "compact_flag": "state/.compact_flag",
     "proxy_log": "logs/proxy.log",

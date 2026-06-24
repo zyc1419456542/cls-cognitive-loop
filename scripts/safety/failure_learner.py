@@ -8,11 +8,11 @@
   - 不分类、不过闸、不评审 — 原样记录，后续再分析
 
 用法:
-  python scripts/wheels/failure_learner.py record    交互式记录失败
-  python scripts/wheels/failure_learner.py record --reason "xxx" --cause "yyy" --lesson "zzz"
-  python scripts/wheels/failure_learner.py recent    最近 N 次失败
-  python scripts/wheels/failure_learner.py today     今天的失败汇总
-  python scripts/wheels/failure_learner.py pattern   分析重复模式（3+次重复→推荐加规则）
+  python scripts/safety/failure_learner.py record    交互式记录失败
+  python scripts/safety/failure_learner.py record --reason "xxx" --cause "yyy" --lesson "zzz"
+  python scripts/safety/failure_learner.py recent    最近 N 次失败
+  python scripts/safety/failure_learner.py today     今天的失败汇总
+  python scripts/safety/failure_learner.py pattern   分析重复模式（3+次重复→推荐加规则）
 
 设计:
   数据路径: data/failures/failure_log.jsonl

@@ -1,7 +1,7 @@
-# 🔴 C盘写入纪律 P0 — 暴毙录#6
+# 🔴 C盘写入纪律 P0 — crash-lessons#6
 > **决不允许向C盘写入任何产出物。曾因C盘炸盘全瘫。**
 
-## 暴毙录前置检查（每次操作前）
+## crash-lessons前置检查（每次操作前）
 1. subprocess `encoding="gbk"` 传了没？
 2. 目标路径在C盘吗？→ 改到数据盘（如 E:）
 3. daemon 重复孵化检查 (PID)
@@ -25,4 +25,4 @@
 - 截图 → `data/screenshots/`
 
 ## 文件锚点
-- `scripts/wheels/c_drive_guard.py`
+- `scripts/core-engine/c_drive_guard.py`

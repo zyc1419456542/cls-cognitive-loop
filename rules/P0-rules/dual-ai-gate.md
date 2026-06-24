@@ -5,7 +5,7 @@
 
 | # | 规则 | 说明 |
 |---|------|------|
-| 1 | 闸门焊接 | `scripts/wheels/qwen_gate.py` WRITE_PROTECT 保护 |
+| 1 | 闸门焊接 | `scripts/core-engine/qwen_gate.py` WRITE_PROTECT 保护 |
 | 2 | 所有产出必过门 | CAD/知识/模式更新前调 `verify_cad_design()` 或 `verify_knowledge()` |
 | 3 | fail→熔断 | verdict=fail → fuse_board.DUAL_AI_GATE 拦截 |
 | 4 | API不可用不阻塞 | gate_status=unavailable → 默认放行 |
@@ -14,5 +14,5 @@
 | 7 | 不可绕过 | 闸门代码+熔断板双保护 |
 
 ## 文件锚点
-- `scripts/wheels/qwen_gate.py`
-- `scripts/fuse_board.py`
+- `scripts/core-engine/qwen_gate.py`
+- `scripts/core-engine/fuse_board.py`

@@ -30,14 +30,14 @@ v1.1 (web DS review):
   - 增加每周抽检标记
 
 用法:
-    from scripts.wheels.trust_labeler import label, collect_from_gate_log
+    from scripts.safety.trust_labeler import label, collect_from_gate_log
     result = label(gate_result, file_path)
     collect_from_gate_log()  # 从 qwen_gate_log.jsonl 批量提取
 
 CLI:
-    python scripts/wheels/trust_labeler.py --from-gate-log [--json]
-    python scripts/wheels/trust_labeler.py --from-trust-gate <file_path>
-    python scripts/wheels/trust_labeler.py --stats
+    python scripts/safety/trust_labeler.py --from-gate-log [--json]
+    python scripts/safety/trust_labeler.py --from-trust-gate <file_path>
+    python scripts/safety/trust_labeler.py --stats
 """
 
 import json, sys, time
@@ -48,8 +48,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 sys.path.insert(0, str(_PROJECT_ROOT / "scripts"))
 
-from scripts.wheels.trust_features import extract as extract_features
-from scripts.wheels.cross_validator import status as cv_status
+from scripts.safety.trust_features import extract as extract_features
+from scripts.safety.cross_validator import status as cv_status
 
 LABELS_FILE = _PROJECT_ROOT / "data" / "safety" / "trust_labels.jsonl"
 GATE_LOG = _PROJECT_ROOT / "data" / "safety" / "qwen_gate_log.jsonl"

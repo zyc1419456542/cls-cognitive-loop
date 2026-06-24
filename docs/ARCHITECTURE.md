@@ -49,15 +49,15 @@ Step 6: TRAJECTORY UPDATE (DIASTOLE)
 Three independent layers, all living outside the model's reach:
 
 ```
-Layer 1: PreToolUse Hook (.claude/hooks/PreToolUse.ps1)
+Layer 1: 7 Lifecycle Hooks (see docs/HOOK_SYSTEM.md) — PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, Stop, SessionEnd, SessionStart
   Runs before every tool call. 14+ checks including COMPUTE_GATE,
   LIFE_CLAIM, FAKE_MODEL, COG_STEP, FUSE_CHECK, CACHE_DISCIPLINE.
 
-Layer 2: Dual-AI Gate (scripts/wheels/qwen_gate.py)
+Layer 2: Dual-AI Gate (scripts/core-engine/qwen_gate.py)
   Generator (DeepSeek) creates, Evaluator (Qwen) verifies.
   p(error) approx equals p(DS err) times p(Qwen err)
 
-Layer 3: Fuse Board (scripts/fuse_board.py)
+Layer 3: Fuse Board (scripts/core-engine/fuse_board.py)
   8 hard fuses: WRITE_PROTECT, RECURSION_LIMIT, TOKEN_BUDGET,
   PARALLEL_CAP, CHECKPOINT_REQUIRED, PROXY_PURITY,
   SELF_EVALUATION_PROHIBITED, DUAL_AI_GATE
@@ -119,7 +119,7 @@ Gate verdicts are parsed from model output with a word-boundary regex to prevent
 | Material parameters combined with numerical computation | Forced verification (AS-T3 + CR-T2 composite risk) |
 | 30-60K tokens combined with numerical computation | Preventive verification |
 
-### Implementation: scripts/wheels/qwen_gate.py
+### Implementation: scripts/core-engine/qwen_gate.py
 
 Three verification functions:
 1. verify_cad_design() -- Design completeness and geometric reasonableness
@@ -130,7 +130,7 @@ Three verification functions:
 
 ## 3. The Fuse Board
 
-The Fuse Board (scripts/fuse_board.py) is the last line of defense. It is implemented as pure stdlib Python with zero imports from the cognitive modules it protects, preventing circular dependency and self-modification.
+The Fuse Board (scripts/core-engine/fuse_board.py) is the last line of defense. It is implemented as pure stdlib Python with zero imports from the cognitive modules it protects, preventing circular dependency and self-modification.
 
 ### Design Principle
 
@@ -138,7 +138,7 @@ An LLM cannot be trusted to manage its own constraints. Constraints must live ou
 
 The fuse board checks a set of independently tracked limits before every significant operation. If any fuse is tripped, the operation is blocked. The model cannot override the fuse board because the fuse board's own code is in the WRITE_PROTECT list.
 
-### Active Fuses (configured in data/safety/fuses_config.json)
+### Active Fuses (configured in data/safety-configs/fuses_config.json)
 
 #### WRITE_PROTECT
 
@@ -238,8 +238,8 @@ The pipeline compresses approximately 50,000+ tokens of raw data into:
 
 ### Key implementation files
 
-- scripts/wheels/symbolic_observer.py -- event-to-symbol mapping
-- scripts/symbolic_dynamics_engine.py -- 8 domain engines, entropy computation
+- scripts/core-engine/symbolic_observer.py -- event-to-symbol mapping
+- scripts/core-engine/symbolic_dynamics_engine.py -- 8 domain engines, entropy computation
 - data/symbolic_dynamics/symbolic_verdict.json -- current verdict
 - state/symbolic_baseline.json -- normal-state reference
 
@@ -269,7 +269,7 @@ Each window gets a unique window_id (PID + timestamp). All windows read and writ
 }]
 ```
 
-### Integration points (scripts/wheels/cross_window_hook.py)
+### Integration points (scripts/core-engine/cross_window_hook.py)
 
 | Cycle Step | Action | Purpose |
 |---|---|---|
@@ -299,9 +299,9 @@ cover_check() compares domain and task keywords against all active windows. If a
 
 LLMs generate text from a learned distribution. Nothing inherently binds a statement to an external fact. An LLM can state "the system is healthy" without any mechanism to verify against actual health. This is an architectural property of language models, not a moral failing. The solution must be external.
 
-### Three-Layer System (data/safety/fact_anchoring_protocol.json)
+### Three-Layer System (data/safety-configs/fact_anchoring_protocol.json)
 
-Layer 1: UPSTREAM PREMISE GATE (scripts/wheels/premise_check.py)
+Layer 1: UPSTREAM PREMISE GATE (scripts/core-engine/premise_check.py)
   Before any operation, verifies: files exist, PIDs live, paths resolve.
   Returns False -> operation blocked.
 
@@ -309,7 +309,7 @@ Layer 2: MIDSTREAM CLAIM ANCHOR
   Every system-state claim must include: (file_path: field_name=value)
   Example: "System active (state/activation_state.json: status=ACTIVE)"
 
-Layer 3: DOWNSTREAM QWEN VERIFY (scripts/wheels/qwen_gate.py)
+Layer 3: DOWNSTREAM QWEN VERIFY (scripts/core-engine/qwen_gate.py)
   Qwen audit prompt includes instruction to reject unanchored claims.
 
 ### Hard Rule: CHECK 4 (LIFE_CLAIM)
@@ -329,7 +329,7 @@ Anchor: (<file_path>: <field>=<value>)
 
 ### What it is
 
-A PowerShell script (.claude/hooks/PreToolUse.ps1) that runs before every tool call. Every Read, Write, Edit, Bash, Grep, Glob, Skill, and Agent call passes through it.
+A PowerShell script (CLAUDE_templates/pre-tool-hook.template.ps1) that runs before every tool call. Every Read, Write, Edit, Bash, Grep, Glob, Skill, and Agent call passes through it.
 
 ### Design: Fail-Open with Auditable Deny
 
@@ -420,7 +420,7 @@ Direct writes to data/memory/ are intercepted by CHECK 2 (MEMORY_BYPASS). All kn
 
 ### CLS Memory Search
 
-A dedicated retrieval layer (scripts/wheels/cls_memory.py) provides semantic search across the memory corpus. Called during Step 1-b (Proactive Knowledge Query) with task keywords extracted from active_context, returning the top 5 matching lessons before task execution begins.
+A dedicated retrieval layer (scripts/core-engine/cls_memory.py) provides semantic search across the memory corpus. Called during Step 1-b (Proactive Knowledge Query) with task keywords extracted from active_context, returning the top 5 matching lessons before task execution begins.
 
 ---
 
@@ -428,22 +428,19 @@ A dedicated retrieval layer (scripts/wheels/cls_memory.py) provides semantic sea
 
 | Component | Location | Role |
 |----------|----------|------|
-| Cognitive Core Loop | data/workflows/general/cognitive_core_loop.json | 6-step loop definition |
-| PreToolUse Hook | .claude/hooks/PreToolUse.ps1 | 14+ pre-tool checks |
-| Fuse Board | scripts/fuse_board.py | Hard limit enforcement |
-| Fuse Config | data/safety/fuses_config.json | Fuse configuration |
-| Dual-AI Gate | scripts/wheels/qwen_gate.py | Generator/evaluator verification |
-| Symbolic Observer | scripts/wheels/symbolic_observer.py | Event-to-symbol mapping |
-| Symbolic Engine | scripts/symbolic_dynamics_engine.py | Domain engines, entropy |
-| Cross-Window Hook | scripts/wheels/cross_window_hook.py | Multi-window coordination |
-| Fact Anchoring | data/safety/fact_anchoring_protocol.json | 3-layer verification |
-| Premise Check | scripts/wheels/premise_check.py | File/PID/state verification |
+| Cognitive Core Loop | workflows/cognitive_core_loop.json | 6-step loop definition |
+| Hook System (7 lifecycle hooks) | docs/HOOK_SYSTEM.md | External constraint enforcement layer |
+| Symbolic Dynamics | docs/SYMBOLIC_DYNAMICS.md | Real-time anomaly detection pipeline |
+| Fuse Board | scripts/core-engine/fuse_board.py | Hard limit enforcement |
+| Fuse Config | data/safety-configs/fuses_config.json | Fuse configuration |
+| Dual-AI Gate | scripts/core-engine/qwen_gate.py | Generator/evaluator verification |
+| Symbolic Observer | scripts/core-engine/symbolic_observer.py | Event-to-symbol mapping |
+| Cross-Window Hook | scripts/core-engine/cross_window_hook.py | Multi-window coordination |
+| Fact Anchoring | data/safety-configs/fact_anchoring_protocol.json | 3-layer verification |
+| Premise Check | scripts/core-engine/premise_check.py | File/PID/state verification |
 | Trajectory | state/trajectory.json | Cross-session continuity |
-| Self-Activate | scripts/self_activate.py | Session init, health checks |
-| Strategy Selector | scripts/wheels/strategy_selector.py | Execution path selection |
-| Epsilon Gate | scripts/wheels/epsilon_gate.py | 10% exploration branching |
-| Delivery Check | scripts/wheels/delivery_check.py | Output hygiene, file catalog |
-| Compute Gate | scripts/wheels/compute_gate.py | Computation declaration enforcement |
+| Delivery Check | scripts/core-engine/delivery_check.py | Output hygiene, file catalog |
+| Compute Gate | scripts/core-engine/compute_gate.py | Computation declaration enforcement |
 
 ---
 

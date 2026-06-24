@@ -1,1 +1,14 @@
-许墨交付/
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Dev artifacts
+*.tmp
+*.log
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db

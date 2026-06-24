@@ -11,4 +11,4 @@
 
 ## 文件锚点
 - `.gitignore`
-- `{PROJECT_ROOT}/.claude/hooks/PreToolUse.ps1` (CHECK #2)
+- `CLAUDE_templates/pre-tool-hook.template.ps1` (CHECK #2)

@@ -10,5 +10,5 @@
 | 5 | 原因 | 更新改tool接口/系统提示/hook机制/权限模型 → CLS全面崩溃风险 |
 
 ## 文件锚点
-- `scripts/self_activate.py`
+- `scripts/core-engine/self_activate.py`
 - `state/version_mismatch.alert`

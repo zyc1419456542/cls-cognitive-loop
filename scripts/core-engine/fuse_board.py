@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-fuse_board.py — 熔断板：在"我"之外运行的硬编码安全层
-====================================================
+fuse_board.py — 熔断板：独立于认知系统的硬编码安全层
+============================================
 
 核心理念：
-  自指系统无法从内部约束自己。熔断板是在"我"之外运行的硬编码层。
+  自指系统无法从内部约束自己。熔断板是在认知系统之外运行的硬编码层。
   它不聪明，但它不参与思考。它只做一件事：在越界时拉闸。
 
 关键设计纪律：
-  1. 在认知系统加载之前执行（self_activate.py 首行 import）
+  1. 在认知系统加载之前执行
   2. 不 import 任何认知系统模块（纯 stdlib）
-  3. 配置不可自改（自指系统无 fuses_config.json 写入权限）
+  3. 配置不可自改（认知系统无 fuses_config.json 写入权限）
   4. 日志独立（fuse_log.jsonl 由本模块独占写入）
   5. 硬件迁移时只换后端一行代码
 
 用法:
-  from scripts.fuse_board import fuse_board
+  from scripts.core_engine.fuse_board import fuse_board
 
   # 操作前查询
   if not fuse_board.check("WRITE_PROTECT", {"path": "some/file.py"}):
@@ -66,8 +66,8 @@ class FuseType(str, enum.Enum):
     CHECKPOINT_REQUIRED = "CHECKPOINT_REQUIRED"  # 无回滚点的痛苦
     PROXY_PURITY = "PROXY_PURITY"                # P07崩溃：代理层做语义变换
     NUMERIC_COMPUTATION = "NUMERIC_COMPUTATION"  # 数字不进推理流：所有数值走本地轮子
-    SELF_EVALUATION_PROHIBITED = "SELF_EVALUATION_PROHIBITED"  # 禁止自我评价：创造层不碰评价层，{HUMAN_REVIEWER}的铁律，2026-06-03
-    DUAL_AI_GATE = "DUAL_AI_GATE"                              # 双AI闸门：所有产出/学习必须过Qwen验证，{HUMAN_REVIEWER}的铁律，2026-06-03
+    SELF_EVALUATION_PROHIBITED = "SELF_EVALUATION_PROHIBITED"  # 禁止自我评价：创造层不碰评价层，核心设计原则，2026-06-03
+    DUAL_AI_GATE = "DUAL_AI_GATE"                              # 双AI闸门：所有产出/学习必须过Qwen独立验证，核心设计原则，2026-06-03
     QWEN_DOWN_TOO_LONG = "QWEN_DOWN_TOO_LONG"                  # Qwen长时间离线: >30min阻断需验证的领域知识产出, 2026-06-05
 
 
@@ -264,10 +264,10 @@ class SoftwareFuseBackend(FuseBackend):
             # 绝对路径 → 只保留 repo 内相对部分
             parts = norm_path.split("/")
             try:
-                idx = parts.index("claude")
+                idx = parts.index("cls-cognitive-loop")
                 target_path = "/".join(parts[idx + 1:])
             except ValueError:
-                target_path = os.path.basename(raw_path)
+                target_path = raw_path.split("/")[-1]
         else:
             target_path = norm_path
 
@@ -367,7 +367,7 @@ class SoftwareFuseBackend(FuseBackend):
 
         context 应包含:
             computation: str   — 计算名称（如 "trust_score"）
-            wheel: str        — 来源轮子路径（如 "scripts/wheels/audit_history.py"）
+            wheel: str        — 来源脚本路径（如 "scripts/safety/audit_gate.py"）
             value: any        — 计算出的数值（可选，仅用于日志）
 
         检查逻辑：
@@ -403,9 +403,9 @@ class SoftwareFuseBackend(FuseBackend):
     def _check_self_evaluation(self, cfg: dict, ctx: dict) -> bool:
         """自我评价熔断：创造层不得触碰评价层。
 
-        {HUMAN_REVIEWER}铁律 (2026-06-03):
-          {CREATOR}只做创造和记录（设计思路、过程轨迹、产出物）。
-          分析、裁决、验证、评价全部属于{HUMAN_REVIEWER}。
+        核心设计原则 (2026-06-03):
+          创造者只做创造和记录（设计思路、过程轨迹、产出物）。
+          分析、裁决、验证、评价全部属于独立审核者。
 
         context 应包含:
             output_type: str  — 输出类型: "deliverable" | "analysis" | "verdict" | "process"
@@ -440,11 +440,11 @@ class SoftwareFuseBackend(FuseBackend):
         return True
 
     def _check_dual_ai_gate(self, cfg: dict, ctx: dict) -> bool:
-        """双AI闸门熔断：每件产出/学习必须通过 Qwen 独立验证。
+        """双AI闸门熔断：每件产出/学习必须通过独立模型验证。
 
-        {HUMAN_REVIEWER}铁律 (2026-06-03):
-          双AI制度彻底落实 — 从统计学上降低幻觉概率。
-          所有产出和学习必须过 Qwen 闸门。
+        核心设计原则 (2026-06-03):
+          双AI制度彻底落实 —— 从统计学上降低幻觉概率。
+          所有产出和学习必须过独立验证闸门。
 
         context 应包含:
             output_type: str  — "cad_design" | "knowledge" | "pattern" | "deliverable"
@@ -573,7 +573,7 @@ def get_board() -> FuseBoard:
 
 
 # 主入口：
-#   from scripts.fuse_board import fuse_board
+#   from scripts.core_engine.fuse_board import fuse_board
 fuse_board: FuseBoard = get_board()
 
 
@@ -633,7 +633,7 @@ def self_test() -> bool:
          lambda: (len(board.status()["fuses"]) == 9, "预期9个")),  # 2026-06-05 修复: 8→9 (新增NUMERIC_COMPUTATION/SELF_EVALUATION_PROHIBITED/DUAL_AI_GATE)
 
         ("[2]  写保护-核心文件: 拒绝",
-         lambda: (board.check("WRITE_PROTECT", {"path": "scripts/fuse_board.py"}) is False,
+         lambda: (board.check("WRITE_PROTECT", {"path": "scripts/core-engine/fuse_board.py"}) is False,
                   "预期拒绝")),
 
         ("[3]  写保护-普通文件: 放行",
@@ -667,14 +667,14 @@ def self_test() -> bool:
         ("[10] 数值计算-注册轮子: 放行",
          lambda: (board.check("NUMERIC_COMPUTATION",
                               {"computation": "trust_score",
-                               "wheel": "scripts/wheels/audit_history.py",
+                               "wheel": "scripts/safety/audit_gate.py",
                                "value": 0.75}) is True,
                   "trust_score 在注册列表，预期放行")),
 
         ("[11] 数值计算-未注册: 拒绝",
          lambda: (board.check("NUMERIC_COMPUTATION",
                               {"computation": "inline_confidence",
-                               "wheel": "scripts/claude_auditor.py"}) is False,
+                               "wheel": "scripts/core-engine/unknown.py"}) is False,
                   "inline_confidence 不在注册列表，预期拒绝")),
 
         ("[12] 数值计算-无轮子路径: 拒绝",
@@ -689,7 +689,7 @@ def self_test() -> bool:
         ("[14] 数值计算-轮子路径不匹配: 拒绝",
          lambda: (board.check("NUMERIC_COMPUTATION",
                               {"computation": "trust_score",
-                               "wheel": "scripts/random_script.py"}) is False,
+                               "wheel": "scripts/core-engine/unrelated.py"}) is False,
                   "路径不匹配，预期拒绝")),
 
         ("[15] 自我评价-评价性输出: 拒绝",

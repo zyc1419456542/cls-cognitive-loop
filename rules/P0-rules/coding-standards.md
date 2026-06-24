@@ -11,9 +11,9 @@
 | 4 | health_check.err 监控 | UnicodeDecodeError 出现立即修 |
 
 ## 数值计算铁律
-1. **计算不进推理流** — 任何数值计算在 `scripts/wheels/` 用 Python 写死
+1. **计算不进推理流** — 任何数值计算在 `scripts/core-engine/` 用 Python 写死
 2. **能算就不估** — 一切可计算的数字全部本地算
 3. **数字必有来源** — 标注来自哪个轮子、哪行代码
 
 ## 文件锚点
-- `data/memory/incidents/crash_lessons_compiled.md` — 暴毙录
+- `data/memory/incidents/crash_lessons_compiled.md` — crash-lessons

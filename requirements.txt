@@ -1,0 +1,8 @@
+# CLS Cognitive Loop — Python dependencies
+# Most components are stdlib-only by design.
+# Only the trust verification stack (trust_gate, trust_features) needs these.
+
+numpy>=1.24.0
+
+# Optional: better Chinese tokenization for trust_features.py
+# jieba>=0.42.0

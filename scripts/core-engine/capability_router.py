@@ -3,12 +3,12 @@
 capability_router.py — 能力路由查询器
 ======================================
 读 data/capability_router.json，根据任务描述匹配意图域，返回应使用的轮子。
-不做L1/L3判断（那是 cls_router.py 的职责），只做工具选择路由。
+只做工具选择路由，不做层级路由判断。
 
 用法:
-  python scripts/wheels/capability_router.py --lookup "找一下电推进的讨论"
-  python scripts/wheels/capability_router.py --list
-  python scripts/wheels/capability_router.py --route "任务描述"  → 完整路由+自动记录日志
+  python scripts/core-engine/capability_router.py --lookup "任务描述"
+  python scripts/core-engine/capability_router.py --list
+  python scripts/core-engine/capability_router.py --route "任务描述"  → 完整路由+自动记录日志
 
 设计原则:
   - 确定性：纯规则匹配（when条件+关键词），不走LLM
@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 BASE = Path(__file__).resolve().parent.parent.parent
 ROUTER_CONFIG = BASE / "data" / "capability_router.json"
-USAGE_LOG = BASE / "data" / "state" / "search_usage.jsonl"
+USAGE_LOG = BASE / "data" / "routing" / "search_usage.jsonl"
 
 
 def load_router() -> dict:

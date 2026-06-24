@@ -25,14 +25,14 @@ v1.1 改进 (web DS 2026-06-06):
   - NaN/Inf 保护
 
 用法:
-    from scripts.wheels.trust_features import extract
+    from scripts.safety.trust_features import extract
     result = extract(text)
     print(result["features"]["topological_entropy"])
 
 CLI:
-    python scripts/wheels/trust_features.py --file <path> [--json]
-    python scripts/wheels/trust_features.py --text "..."  [--json]
-    python scripts/wheels/trust_features.py --calibrate --input data/safety/qwen_gate_log.jsonl
+    python scripts/safety/trust_features.py --file <path> [--json]
+    python scripts/safety/trust_features.py --text "..."  [--json]
+    python scripts/safety/trust_features.py --calibrate --input data/safety/qwen_gate_log.jsonl
 """
 
 import json, os, sys, re, time

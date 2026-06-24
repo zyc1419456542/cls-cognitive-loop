@@ -21,13 +21,13 @@ v1.1 改进:
   - 交叉验证结果附加到裁决中 (warn 不 block)
 
 用法:
-    from scripts.wheels.trust_gate import gate
+    from scripts.safety.trust_gate import gate
     result = gate("path/to/delivery.md")
     if result["verdict"] == "fail":
         print(f"拦截: {result['violations']}")
 
 CLI:
-    python scripts/wheels/trust_gate.py --file <path> [--json] [--force]
+    python scripts/safety/trust_gate.py --file <path> [--json] [--force]
 """
 
 import json, os, sys, time, hashlib
@@ -40,13 +40,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 sys.path.insert(0, str(_PROJECT_ROOT / "scripts"))
 
-from scripts.wheels.trust_features import extract as extract_features
-from scripts.wheels.cross_validator import validate as cross_validate
+from scripts.safety.trust_features import extract as extract_features
+from scripts.safety.cross_validator import validate as cross_validate
 
 
 CONFIG_PATH = _PROJECT_ROOT / "data" / "safety" / "trust_gate_config.json"
-EMERGENCY_BYPASS = _PROJECT_ROOT / "data" / "state" / "emergency_bypass.flag"
-COOLDOWN_FILE = _PROJECT_ROOT / "data" / "state" / "trust_cooldown.json"
+EMERGENCY_BYPASS = _PROJECT_ROOT / "data" / "safety" / "emergency_bypass.flag"
+COOLDOWN_FILE = _PROJECT_ROOT / "data" / "safety" / "trust_cooldown.json"
 
 
 def _load_config() -> dict:
@@ -396,7 +396,7 @@ def _write_report(file_path: str, result: dict):
     report_path.write_text(report_text, encoding="utf-8")
 
     # ── 同时写入永久审计归档 ──
-    archive_dir = _PROJECT_ROOT / "{DELIVERY_DIR}" / "{DESIGN_DIR}" / "03_认知系统与架构" / "🔍 符号动力学审计"
+    archive_dir = _PROJECT_ROOT / "data" / "audit" / "trust_gate_archive"
     try:
         archive_dir.mkdir(parents=True, exist_ok=True)
         # 文件名: YYYYMMDD_HHMMSS_原文件名_verdict.md
@@ -409,7 +409,7 @@ def _write_report(file_path: str, result: dict):
         index_path = archive_dir / "INDEX.md"
         existing = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
         if not existing:
-            existing = "# 🔍 符号动力学审计索引\n\n| 时间 | 文件 | 裁决 | block | warn |\n|------|------|------|-------|------|\n"
+            existing = "# Trust Gate Audit Index\n\n| Time | File | Verdict | Block | Warn |\n|------|------|------|-------|------|\n"
         new_row = f"| {ts} | `{file_path}` | {result.get('verdict', '?')} | {result.get('block_count', 0)} | {result.get('warn_count', 0)} |"
         index_path.write_text(existing.rstrip() + "\n" + new_row + "\n", encoding="utf-8")
     except Exception:
@@ -420,7 +420,7 @@ def should_check(file_path: str) -> bool:
     """判断文件是否应被信任闸门检查"""
     path_str = str(file_path).replace("\\", "/")
     config = _load_config()
-    delivery_dirs = config.get("global", {}).get("delivery_dirs", ["{DELIVERY_DIR}", "data/memory"])
+    delivery_dirs = config.get("global", {}).get("delivery_dirs", ["output", "data/memory"])
     extensions = config.get("global", {}).get("file_extensions", [".md"])
     min_chars = config.get("global", {}).get("min_chars_for_check", 200)
 

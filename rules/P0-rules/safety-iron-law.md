@@ -16,9 +16,9 @@
 
 ## 熔断板
 6个熔断器: 写保护 / 递归上限(深度≤5) / Token预算(会话50万) / 并行上限(≤3) / 检查点强制 / 代理纯净
-`scripts/fuse_board.py` — 独立stdlib，不import认知模块
+`scripts/core-engine/fuse_board.py` — 独立stdlib，不import认知模块
 
 ## 文件锚点
-- `scripts/fuse_board.py` — 熔断板
-- `data/safety/fuses_config.json`
+- `scripts/core-engine/fuse_board.py` — 熔断板
+- `data/safety-configs/fuses_config.json`
 - `data/safety/preflight/check_all.ps1`

@@ -29,8 +29,8 @@ qwen_gate.py — 双AI闸门  (轮子, 纯硬编码)  |  v3.0 健康感知+Anthr
     qwen_gate 是主动调用, fuse_board.DUAL_AI_GATE 是被动熔断
 
 用法:
-    from scripts.wheels.qwen_gate import (verify_cad_design, verify_knowledge,
-                                          verify_numerical, gate_numerical_if_needed)
+    from scripts.core_engine.qwen_gate import (verify_cad_design, verify_knowledge,
+                                                verify_numerical, gate_numerical_if_needed)
     # CAD验证
     result = verify_cad_design("同轴支撑管", "空心管+4支撑环...", params_dict)
     # 数值验证（条件触发）
@@ -46,7 +46,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 # ── 统一API管线（所有外部调用走此轮子，过程实时可见）──
-from scripts.wheels.api_pipeline import call as _api_call
+from scripts.core_engine.api_pipeline import call as _api_call
 
 # ── 路径 ──
 GATE_LOG = _PROJECT_ROOT / "data" / "safety" / "qwen_gate_log.jsonl"
