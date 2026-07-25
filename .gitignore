@@ -4,6 +4,16 @@ __pycache__/
 *.egg-info/
 dist/
 
+# Keys & secrets
+keys/
+*.key
+*.pem
+*.env
+*api_key*
+*_secret*
+*_token*
+.env*
+
 # Dev artifacts
 *.tmp
 *.log
