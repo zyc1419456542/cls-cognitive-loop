@@ -13,7 +13,7 @@
 A System Description and Experience Report}
 
 \author{Cognitive Workshop}
-\date{June 2026}
+\date{July 2026 (v2: production status update)}
 
 \begin{document}
 \maketitle
@@ -136,47 +136,62 @@ All metrics use rolling windows (default $N=100$ observations). As the window ad
 
 \section{Architecture}
 
-\subsection{Deployment Pipeline}
+\subsection{Deployment Pipeline (v2: July 2026)}
 
-The system is deployed as a multi-domain pipeline integrated into the agent harness lifecycle:
+The system runs as a set of PowerShell lifecycle hooks embedded in Claude Code. As of July 2026, the pipeline is:
 
 \begin{enumerate}[leftmargin=*,itemsep=1pt]
-\item \textbf{Observer} ($\sim$10ms): Maps each tool call and hook verdict to domain symbols, appends to per-domain JSONL logs.
-\item \textbf{Engine} ($\sim$150ms): 8 domain engines independently compute entropy, spectral radius, and forbidden-word counts over rolling windows. Pure Python standard library, no API calls.
-\item \textbf{Verdict} ($\sim$20ms): Aggregated health states written to a shared verdict file (\texttt{symbolic\_verdict.json}).
-\item \textbf{Gate} ($<$5ms): PreToolUse lifecycle hook reads current verdict before every tool call. \texttt{critical} or \texttt{diverging} state triggers DENY; \texttt{warn} triggers ASK.
+\item \textbf{Observer} ($\sim$10ms, \texttt{symbolic\_observer.py}, 1111 lines): Maps each tool call to domain symbols and writes to per-domain JSONL logs. Currently active: \texttt{retrieval} domain. Six other domains defined but not yet receiving automated observation input.
+\item \textbf{Forbidden-word check} ($<$1ms, \texttt{forbidden\_words.json}): Regex-based SFT enforcement. Detects known-bad symbol patterns and writes alerts to \texttt{alerts.jsonl}.
+\item \textbf{Small-model judge} ($\sim$2s, \texttt{symbolic\_judge.py}, 327 lines): For forbidden-word hits within 60 seconds, a SiliconFlow Qwen2.5-7B (free API) performs semantic analysis to distinguish genuine anomalies from false positives. Outputs \texttt{block/inject/allow} decisions via stdout JSON.
+\item \textbf{Brain scheduler} ($<$5ms, \texttt{cls\_brain.py}, 308 lines): Every 10 tool calls, checks state file freshness, runs 4-region bidding, and computes symbolic health from alert counts and domain activity. Was non-functional for 47 hours due to a hook format error; now operational.
+\item \textbf{Subconscious capture} ($\sim$2s, \texttt{auto\_capture.py}, 350 lines): Every 10 tool calls, a separate model extracts reusable knowledge from the trajectory log and writes to memory files. Runs asynchronously; the primary model is unaware of its existence.
 \end{enumerate}
 
-Total end-to-end latency: $\sim$200ms. Zero additional API cost.
+Total per-tool-call overhead: $\sim$10ms for observer + occasional $\sim$2s for judge/capture (asynchronous, non-blocking).
 
-\subsection{Domain Coverage}
+\subsection{Production Status (8 domains)}
 
 \begin{center}
-\begin{tabular}{lcl}
+\begin{tabular}{lcll}
 \toprule
-Domain & Alphabet Size & Sensitivity \\
+Domain & Alphabet Size & Status & Notes \\
 \midrule
-\texttt{hook} (safety gate outcomes) & 10 & High \\
-\texttt{dialogue} (conversation patterns) & 10 & Medium \\
-\texttt{cad} (CAD modeling) & 9 & Medium \\
-\texttt{quant} (computation) & 8 & Medium \\
-\texttt{image} (image processing) & 8 & Medium \\
-\texttt{window} (cross-session) & Variable & Low \\
-\texttt{pic} (plasma simulation) & Variable & Low \\
-\texttt{retrieval} (knowledge retrieval) & Variable & Low \\
+\texttt{retrieval} & 6 & \textbf{Active} & Tool call audit, continuously observed \\
+\texttt{window} & 8 & Inactive & Cross-session, 51h stale \\
+\texttt{cad} & 9 & Inactive & 409h stale, no automated input \\
+\texttt{dialogue} & 10 & Inactive & 442h stale \\
+\texttt{hook} & 10 & Inactive & 782h stale \\
+\texttt{image} & 8 & Inactive & 816h stale \\
+\texttt{quant} & 8 & Inactive & 816h stale \\
+\texttt{pic} & 14 & Inactive & Never initialized \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Each domain is independently monitored. An anomaly in one domain (e.g., \texttt{cad}) does not affect the verdict for other domains (e.g., \texttt{dialogue}), preventing cascading false alarms across unrelated subsystems.
+\textbf{Why only one domain is active.} The observer maps tool calls to symbols via a \texttt{switch} statement that assigns a single character to each tool (W=Write, R=Read, etc.). Domain routing was designed to happen through \texttt{channel\_scanner\_proto} classification of user messages, but the classification pipeline was never connected to the automated observation loop. All tool-call observations land in \texttt{retrieval} by default. Activating the other 7 domains requires connecting their observation entry points to the PostToolUse hook---a straightforward integration task, not a design flaw.
+
+\subsection{The 34-Day Debug: Lessons from Production}
+
+Between June and July 2026, all three CLS subsystems (6-step cognitive cycle, 4-region brain scheduler, symbolic dynamics) appeared to be dead. After 5 weeks of multi-model consultation and byte-level file inspection, the root cause was identified: \textbf{four interface assumptions about Claude Code hooks were all incorrect}.
+
+\begin{enumerate}[leftmargin=*,itemsep=1pt]
+\item \textbf{JSON envelope.} Hook output fields must be nested inside \texttt{hookSpecificOutput}. Bare top-level fields are silently ignored by CC. Our \texttt{\_EmitDecision} function had been outputting bare JSON since day one---meaning all 15 deny gates had never actually fired.
+\item \textbf{Exit code semantics.} Exit code 2 only blocks Bash operations, not Write/Edit (GitHub Issue \#13744). We had been using exit 2 to block all tools.
+\item \textbf{stdout visibility.} The only mechanism for injecting content into the model's context is exit 2 + stderr, or PostToolUse \texttt{\{"decision":"block"\}}. Writing to files and expecting CC to read them is ineffective.
+\item \textbf{Encoding.} PowerShell 5.1 on Chinese Windows requires a UTF-8 BOM (\texttt{0xEFBBBF}) to parse \texttt{.ps1} files correctly. Without it, multi-byte UTF-8 characters in comments cause cascading parser errors.
+\end{enumerate}
+
+\textbf{Key methodological insight.} External LLMs (DS Pro, GPT-5.5, Kimi, Qwen) do not know Claude Code's internal API. CC was designed for Opus, and its hook protocol is not part of any external model's training data. Developing CC infrastructure requires searching official documentation and GitHub Issues---not relying on model ``common sense'' about how hooks should work.
 
 \subsection{Orthogonality to Semantic Verification}
 
-The symbolic dynamics gate (CHECK 9) operates alongside a dual-AI semantic verification gate (CHECK 16) in the same PreToolUse hook. These are orthogonal signals:
+The symbolic dynamics pipeline operates alongside the cognitive cycle's 15 deny gates in the same PreToolUse hook. These are complementary layers:
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
-\item \textbf{Symbolic dynamics}: Fast ($\sim$200ms), statistical, behavioral. Detects loops, phase transitions, and forbidden patterns. Zero API cost.
-\item \textbf{Dual-AI gate}: Slower ($\sim$3--5s), semantic, content-based. Verifies factual correctness via independent model audit. Requires API call.
+\item \textbf{Symbolic dynamics}: Fast ($\sim$10ms observer, occasional $\sim$2s judge), statistical, behavioral. Detects loops, phase transitions, and forbidden patterns. Uses free SiliconFlow API for semantic disambiguation.
+\item \textbf{Cognitive deny gates}: Instant ($<$1ms), rule-based, deterministic. 15 hard-coded rules (LIFE\_CLAIM, COG\_STEP, FAKE\_MODEL, etc.) that structurally reject unsafe operations.
+\item \textbf{Subconscious capture}: Asynchronous ($\sim$2s, every 10 rounds), extracts reusable knowledge without the primary model's awareness. Prevents self-reinforcing knowledge contamination.
 \end{itemize}
 
 The two layers catch failures that the other misses: a semantic audit cannot detect a behavioral loop, and a symbolic dynamics check cannot detect a factual error in a single output.
@@ -202,13 +217,13 @@ These cases were cherry-picked post-hoc to match the three metrics. We do not kn
 \section{Discussion and Limitations}
 
 \paragraph{Limitations.}
-(1) Detection quality depends on alphabet granularity: too coarse an alphabet loses discriminative power; too fine produces sparse observations with unreliable statistics. Domain-specific tuning of alphabet size is currently manual. (2) Baseline calibration ($H_{\text{baseline}}, \rho_{\text{baseline}}$) requires a representative sample of normal behavior for each domain; domain shift over time may require recalibration. (3) Forbidden words are manually defined based on operator experience; automatic discovery from historical anomaly logs is a direction for future work. (4) The current evaluation is based on a single deployment (one agent harness, one operator); cross-system validation on public agent benchmark trajectories (e.g., SWE-bench~\cite{yang2024sweagent}) is needed to establish generality.
+(1) Detection quality depends on alphabet granularity: too coarse loses discriminative power; too fine produces sparse observations. (2) Baseline calibration requires representative normal-behavior samples; domain shift may require recalibration. (3) Forbidden words are manually defined; automatic discovery from historical anomaly logs is future work. (4) Single-deployment evaluation; cross-system validation on public agent benchmarks (SWE-bench~\cite{yang2024sweagent}) is needed for generality. (5) \textbf{Production reality (v2):} As of July 2026, only 1 of 8 symbol domains receives automated observation input. The 3-tier judge pipeline (observer $\rightarrow$ small-model semantic analysis $\rightarrow$ hook gate) was deployed and verified with a controlled test (LIFE\_CLAIM deny), but has not yet encountered a real forbidden-word anomaly since deployment. The brain scheduler was non-functional for 47 hours and the symbolic health file was stale for 23 days due to a single JSON format error. These gaps---as well as the 34-day debug period described in Section 4---are disclosed here as an honest accounting of the gap between architectural design and production reliability.
 
-\paragraph{Relationship to Content-Based Methods.}
-Symbolic dynamics monitoring is not a replacement for semantic verification---it is an orthogonal layer that detects a class of anomalies (behavioral loops, phase transitions, forbidden action patterns) that content-based methods are structurally blind to. The combination of fast statistical behavioral monitoring with slower semantic content verification provides defense-in-depth for production agent deployments.
+\paragraph{What Worked.}
+Despite the limitations, three design choices proved robust: (1) \textbf{Hook-based hard gates}---15 deny rules in \texttt{PreToolUse.ps1} that structurally reject unsafe operations without model involvement---never failed, even when the symbolic dynamics observer was non-functional; the gates simply waited to be called, and resumed immediately once the JSON format was corrected. (2) \textbf{The subconscious capture model} (auto\_capture) successfully extracted reusable knowledge from trajectory logs within 24 hours of deployment, using a separate model (SiliconFlow Qwen2.5-7B) with zero awareness of the primary model's context. (3) \textbf{The debugging methodology} of piping synthetic hook JSON through PowerShell scripts to reproduce exact error output ($\texttt{echo \{...\} | powershell -File script.ps1}$) proved essential---it exposed encoding issues, format errors, and path resolution bugs that were invisible in Claude Code's generic ``hook error'' messages.
 
 \paragraph{Future Work.}
-Beyond automatic forbidden-word mining, several directions are promising: (1) cross-system validation on public agent trace datasets (SWE-bench, AgentBench) to establish quantitative benchmarks; (2) theoretical analysis of the relationship between alphabet granularity $n_k$ and detection power as a function of observation window size $N$; (3) integration with DTMC-based approaches~\cite{chen2025probguard} for joint statistical guarantees combining transition structure with probabilistic safety bounds; (4) extending the SFT framework to handle stochastic forbidden words with graded severity based on observed frequency rather than binary detection.
+(1) Activate the remaining 7 symbol domains by connecting their observation entry points to the PostToolUse hook. (2) Quantitative evaluation on public agent trace datasets. (3) Automatic forbidden-word mining from historical anomaly logs. (4) Integration with DTMC-based approaches~\cite{chen2025probguard} for joint statistical guarantees.
 
 
 \section*{Acknowledgments}

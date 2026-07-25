@@ -1,111 +1,123 @@
-# CLS 认知循环系统
+# CLS 认知操作系统
 
-> 一个 LLM Agent 运行时框架，将推理过程结构化为可验证的 6 步认知循环，配备双模型交叉验证、纯 stdlib 熔断板和跨会话状态持久化。
+[![DOI](https://zenodo.org/badge/1278055077.svg)](https://doi.org/10.5281/zenodo.20830497)
 
----
-
-## 解决的问题
-
-LLM Agent 在长任务中会出现状态漂移：每步单独看合理，但整体偏离目标。根因是缺乏稳定的外部状态系统—— 只是文本序列，会膨胀、自指、遗忘早期约束。
-
-CLS 在每个任务上强制执行 6 步闭环（态势感知→执行→学习→泛化→持久化→轨迹更新），步间状态可验证，跨 session 可恢复。
-
-代码首次提交于 2026-05-25（commit ），早于"Loop Engineering"概念在行业公开讨论（2026-06-07）。
+> LLM Agent 的生产级认知运行时：6步认知循环、4脑区调度器、3级异常裁决管线、潜意识知识捕获——全部运行在 Claude Code Hooks 上。2025年6月设计，2026年7月全面投产。
 
 ---
 
-## 与其他方案的对比
+## CLS 实际做什么（2026年7月）
 
-| 方案 | 做什么 | CLS 的差异 |
-|------|--------|-----------|
-| 直接调用 LLM API | 单次生成，无状态 | 6 步结构化闭环，步间有状态检查和安全校验 |
-| LangChain / LlamaIndex | 工作流编排 + RAG | 认知循环而非管线；双模型验证而非自评；纯 stdlib 熔断而非软约束 |
-| AutoGPT / BabyAGI | 自主任务拆解 | 固定 6 步循环，不无限派生子任务，稳定性优先 |
-| Loop Engineering 概念 | 循环式 harness 的理论框架 | 在概念命名前已有可运行代码；双 AI 闸门和熔断板为独有实现 |
-| Claude Code / Cursor | 带 agent 能力的开发工具 | 与宿主无关的架构，可集成到任意 LLM 运行时 |
+经过 5 周对 Claude Code Hooks 的逐字节调试，以下是运行在 Windows 桌面上的生产系统：
+
+```
+每次工具调用：
+  PreToolUse Hook  → 15个deny闸门（LIFE_CLAIM, COG_STEP, FAKE_MODEL 等）
+  PostToolUse Hook → trajectory.jsonl（工具调用审计日志，~140条/会话）
+                   → symbolic_observer（禁止词检测）
+                   → symbolic_judge（硅基 Qwen2.5-7B：正则命中→语义分析→block/inject）
+                   → cls_brain.tick()（每10轮：新鲜度，4脑区竞价，符号健康）
+
+每10次工具调用：
+  auto_capture → 硅基 Qwen2.5-7B：提取可复用知识→写入memory → 追加session_memory.md
+
+每次tick()调用：
+  rotate_telemetry → 修剪9个JSONL日志文件
+```
+
+**生产数据：** trajectory 140+条/会话（修复前从未存在），brain_telemetry 每30分钟更新（之前死47h），symbolic_health 每10轮更新（之前死23天），auto_capture 24h内捕获3条知识。
 
 ---
 
-## 架构概览
+## 架构（实际运行版）
 
+```
+Claude Code 会话
+       │
+  ┌────┼────┐
+  ▼    ▼    ▼
+SessionStart  PreToolUse   PostToolUse
+(启动注入)   (15deny闸门)  (observer+judge+brain+capture)
+  │           │              │
+  ▼           ▼              ▼
+guidance_  hookSpecific   trajectory.jsonl
+injection  Output信封     operations/retrieval/alerts
+           {permission    judge_log.jsonl
+           Decision:deny} auto_capture_log.jsonl
+                                │
+                    ┌───────────┘
+                    ▼
+            cls_brain.tick() [每10轮]
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+   freshness()  bidding()  _compute_symbolic_health()
+```
 
+### 三级异常裁决管线
 
-**6 步说明：**
+```
+工具调用 → PostToolUse
+  ├─ 第一层: symbolic_observer (正则扫描, forbidden_words.json, <1ms)
+  ├─ 第二层: symbolic_judge (硅基7B语义分析, <2s, 5层JSON容错)
+  └─ 第三层: PreToolUse CHECK 15.3 (读取guidance_block, 10min窗口)
+```
 
-| 步骤 | 名称 | 功能 |
+### 潜意识系统
+
+主模型(DS V4 Pro)专注用户任务，后台模型(Qwen2.5-7B)观察trajectory、每10轮提取知识、静默写入memory。两个模型互不知道对方存在——防止自举污染。
+
+---
+
+## 6步认知循环（生产状态）
+
+| 步骤 | 状态 | 机制 |
 |------|------|------|
-| ① | 态势感知 | 读取状态文件，感知并行会话，确定当前上下文 |
-| ② | 任务执行 | 规模评估→前置检查（熔断板、前提验证）→执行→验证 |
-| ③ | 关联学习 | 新知识与已有模式匹配，标记矛盾 |
-| ④ | 抽象泛化 | 具体经验提炼为可迁移的模式 |
-| ⑤ | 上下文持久化 | 写检查点到磁盘，支持跨 session 恢复 |
-| ⑥ | 轨迹更新 | 记录任务演化方向（Δq 质量变化 / Δp 动量变化） |
-
-闭环：⑥ 的输出是下一轮 ① 的输入。
+| ① 态势感知 | ⚠️ 手动 | active_context.json |
+| ② 任务执行 | ✅ 自动 | cog_step.json + CHECK 15硬闸门 |
+| ③ 关联学习 | ✅ 自动 | auto_capture每10轮→硅基7B→SHA-256去重 |
+| ④ 抽象泛化 | ✅ 自动 | 每10次捕获→跨会话模式检测 |
+| ⑤ 上下文持久化 | ✅ 自动 | 增量session_memory.md |
+| ⑥ 轨迹更新 | ✅ 自动 | trajectory.jsonl每次工具调用 |
 
 ---
 
-## 核心机制
+## 关键工程教训
 
-### 1. 双 AI 闸门（生成/验证分离）
+**34天调试的根因：对CC Hooks的四个接口假设全部错误。**
 
-一个模型不应评估自己的输出。CLS 将生成和验证分配给不同模型：
+| 假设 | 实际 | 修复 |
+|------|------|------|
+| JSON裸字段可用 | 必须嵌套hookSpecificOutput | 改_EmitDecision格式 |
+| exit 2全拦截 | 只拦Bash不拦Write/Edit | 改用exit 0 |
+| 写文件=CC读 | CC只读stdout JSON | 改用stdout |
+| UTF-8通用 | PS 5.1中文Windows需BOM | 加\xEF\xBB\xBF |
 
-- 生成模型负责产出（代码、文档、分析）
-- 验证模型独立审计（正确性、一致性、安全性）
-
-P(系统错误) = P(生成错误) × P(验证错误)。单端 10% 错误率时，双重错误率 ≈ 1%。验证 API 不可用时自动降级。
-
-### 2. 熔断板（纯 stdlib 实现）
-
-6 个独立熔断器，无外部依赖，不导入受保护的认知模块：
-
-| 熔断器 | 防护目标 | 触发行为 |
-|--------|---------|---------|
-| WRITE_PROTECT | 核心文件自修改 | 阻止写入 |
-| RECURSION_LIMIT | 无限自指嵌套（深度 > 5） | 截断 |
-| TOKEN_BUDGET | API 费用超限 | 阻止调用 |
-| PARALLEL_CAP | 并发破坏性操作（> 3） | 阻塞新任务 |
-| CHECKPOINT_REQUIRED | 无回滚点的大变更 | 强制保存 |
-| PROXY_PURITY | 代理层语义变换 | 仅允许字段删除 |
-
-### 3. 符号动力学与跨窗口协调
-
-- **符号审计**：将长对话压缩为 3 个数值（拓扑熵、谱半径、告警计数）+ 1 个状态词，约 200ms/次
-- **跨窗口感知**：多个会话共享状态文件，互感知焦点，避免领域冲突
-- **事实锚定**：声明必须引用具体文件路径和字段值，无锚定的陈述被结构拒绝
+**教训：** 外部模型不知道CC内部API。CC为Opus设计。开发CC基础设施必须搜官方文档+GitHub Issues。
 
 ---
 
-## 仓库结构
+## 对比
 
-
-
----
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.10+
-- （可选）第二个 LLM API 用于双 AI 闸门
-
-### 验证
-
-
+| 方案 | CLS增加 |
+|------|--------|
+| 裸LLM API | 6步循环+硬闸门+潜意识捕获+跨会话状态 |
+| LangChain/CrewAI | 认知循环（非DAG）；双模型验证；stdlib熔断 |
+| Claude Code内置 | 15deny闸门+3级裁决+潜意识记忆+脑区调度 |
+| llm-wiki/claude-mem | 每10轮实时捕获（不依赖SessionEnd） |
 
 ---
 
 ## 设计原则
 
-1. **接口优先于实现** — 固定签名，可替换后端。熔断器的软件/硬件实现切换不影响调用代码
-2. **约束层外置** — 安全规则存储在模型无法修改的文件中，不依赖模型自觉
-3. **按需加载** — 安全层始终在线，领域模块按任务类型激活
+1. **接口>实现** — 认知循环固定协议；后端可替换
+2. **约束在模型外** — 15条deny规则在.ps1文件中，模型不可修改
+3. **双模型零互知** — 潜意识模型从未见过主模型上下文
+4. **Fail-open+审计** — Hook失败写诊断日志但永不阻塞主线
+5. **无常驻GPU** — 硅基免费API+本地Ollama按需调用
 
 ---
 
 ## 许可证
 
-Apache 2.0。详见 [LICENSE](LICENSE)。
-
-Copyright 2026 The CLS Project Authors
+Apache 2.0. [LICENSE](LICENSE). Copyright 2026 The CLS Project Authors

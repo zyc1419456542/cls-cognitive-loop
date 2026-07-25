@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
 """
-CLS Cognitive Loop — Live Demonstration
-=======================================
-Runs the complete 6-step cognitive cycle on a sample task.
-Shows each step's input, processing, and output with clear delimiters.
+CLS Cognitive Loop — Architecture Walkthrough
+=============================================
+Demonstrates the core engine components (fuse board, cognitive cycle state machine,
+symbolic observer) in isolation. Does NOT require Claude Code or API keys.
+
+For the full production deployment (Claude Code hooks, 3-tier judge pipeline,
+auto_capture subconscious, brain scheduler), see the scripts/wheels/ directory
+and .claude/hooks/ in the main repository.
 
 Usage:
   python demo.py              # Run with built-in sample task
   python demo.py --task "..." # Run with custom task description
   python demo.py --quick      # Fast mode: skip detailed output
   python demo.py --benchmark  # Run 10 cycles and report timing stats
+
+Production status (July 2026):
+  - 6-step cycle: steps ②③④⑤⑥ automated, ① manual
+  - 15 deny gates: all operational (verified: LIFE_CLAIM block test)
+  - 3-tier judge: deployed, awaiting first real forbidden-word anomaly
+  - auto_capture: 3 knowledge items captured in first 24 hours
+  - brain scheduler: operational (was dead 47h, root cause: JSON format error)
+  - symbolic health: updating every 10 rounds (was dead 23 days)
 """
 
 from __future__ import annotations

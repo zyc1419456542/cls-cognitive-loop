@@ -1,115 +1,167 @@
-# CLS Cognitive Loop
+# CLS Cognitive Operating Procedure
 
 [![DOI](https://zenodo.org/badge/1278055077.svg)](https://doi.org/10.5281/zenodo.20830497)
 
-> An LLM agent runtime framework that structures reasoning into a verifiable 6-step cognitive cycle — with dual-model cross-verification, stdlib-only circuit breakers, and cross-session state persistence.
+> A production cognitive runtime for LLM agents: 6-step cognitive cycle, 4-region brain scheduler, 3-tier anomaly judge, and subconscious knowledge capture — all running on Claude Code hooks. Designed June 2025, operational July 2026.
 
 ---
 
-## Problem
+## What CLS Actually Does (July 2026)
 
-LLM agents drift on long tasks. Each step appears reasonable in isolation, but the overall trajectory diverges because the model lacks a stable external state system. `prompt + history` is a text sequence that expands, self-references, and forgets early constraints.
+After 5 weeks of debugging against real Claude Code hooks, here's what's running in production on a Windows desktop with no GPU daemon:
 
-CLS enforces a 6-step cycle (awareness → execution → learning → generalization → persistence → trajectory update) on every task. State is checkpointed between steps and recoverable across sessions.
+```
+Every tool call:
+  PreToolUse Hook  → 15 deny gates (LIFE_CLAIM, COG_STEP, FAKE_MODEL, etc.)
+  PostToolUse Hook → trajectory.jsonl (tool call audit log, ~140 entries/session)
+                   → symbolic_observer (forbidden word detection, domain entropy)
+                   → symbolic_judge (SiliconFlow Qwen2.5-7B: regex hit → semantic analysis → block/inject)
+                   → cls_brain.tick() (every 10 rounds: freshness check, 4-region bidding, symbolic health)
 
-First commit on 2026-05-25, predating the "Loop Engineering" concept in public discourse (2026-06-07).
+Every 10 tool calls:
+  auto_capture      → SiliconFlow Qwen2.5-7B: extract reusable knowledge → write memory files
+                   → append session_memory.md (incremental summary, replaces unreliable SessionEnd)
+
+Every capture #10:
+  cross-session     → pattern detection across sessions → patterns.md
+
+Every tick() call:
+  rotate_telemetry  → trim 9 JSONL log files (voice_signal 5000→2000, alerts 3000→1000, etc.)
+```
+
+**Key numbers from production:**
+- trajectory.jsonl: 140+ entries per session (was 0 before hook fix)
+- brain_telemetry: 26 entries, updated every ~30min (was dead for 47 hours)
+- symbolic_health: updated every 10 rounds (was dead for 23 days)
+- voice_signal: 45,000+ broadcast entries, auto-rotated
+- auto_capture: 3 knowledge items captured in first 24 hours
 
 ---
 
-## Comparison
+## Architecture (What Actually Runs)
+
+```
+                    Claude Code Session
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+    SessionStart      PreToolUse       PostToolUse
+    (boot注入)       (15 deny闸门)     (observer+judge+brain+capture)
+          │                │                │
+          ▼                ▼                ▼
+    .guidance_       hookSpecific      trajectory.jsonl
+    injection        Output envelope   operations.jsonl
+    (注入上下文)     {permission       alerts.jsonl
+                     Decision:deny}    judge_log.jsonl
+                                       auto_capture_log.jsonl
+                                              │
+                    ┌─────────────────────────┘
+                    ▼
+            cls_brain.tick()  [every 10 rounds]
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+   freshness()  bidding()  _compute_symbolic_health()
+   (5文件检查)  (4脑区竞价)  (告警统计+域覆盖率)
+        │           │           │
+        ▼           ▼           ▼
+   guidance_    voice_      symbolic_
+   injection    signal      health.json
+```
+
+### The 3-Tier Anomaly Judge Pipeline
+
+```
+Tool call → PostToolUse
+  │
+  ├─ Tier 1: symbolic_observer (regex scan, forbidden_words.json, <1ms)
+  │   └─ hit → alerts.jsonl (type=forbidden_hit)
+  │
+  ├─ Tier 2: symbolic_judge (SiliconFlow Qwen2.5-7B, semantic analysis, <2s)
+  │   └─ 5-layer JSON parsing fallback
+  │   └─ block=true → stdout {"decision":"block"} → CC injects reason
+  │   └─ injection → stdout hookSpecificOutput.additionalContext
+  │
+  └─ Tier 3: PreToolUse CHECK 15.3 (reads .guidance_block from previous judge)
+      └─ 10min window → ASK user before next Write/Edit/Bash
+```
+
+### The Subconscious (auto_capture)
+
+```
+Primary model (DS V4 Pro)     Background model (Qwen2.5-7B)
+─────────────────────────     ─────────────────────────
+Works on user task            Watches trajectory.jsonl
+Never told about capture      Never participates in dialogue
+Generates tool calls          Extracts patterns every 10 rounds
+                              Writes memory files silently
+                              
+Two models don't know each other exist.
+This prevents self-reinforcing contamination.
+```
+
+---
+
+## 6-Step Cognitive Cycle (Production Status)
+
+| Step | Name | Status | Mechanism |
+|------|------|--------|-----------|
+| ① | Situational Awareness | ⚠️ Manual | active_context.json — requires human/AI refresh |
+| ② | Task Execution | ✅ Auto | cog_step.json + CHECK 15 hard gate (15 deny rules) |
+| ③ | Associative Learning | ✅ Auto | auto_capture every 10 rounds → SiliconFlow 7B → SHA-256 dedup → memory files |
+| ④ | Abstract Generalization | ✅ Auto | Every 10 captures → cross-session pattern detection → patterns.md |
+| ⑤ | Context Persistence | ✅ Auto | Incremental session_memory.md (every 10 rounds, replaces unreliable SessionEnd) |
+| ⑥ | Trajectory Update | ✅ Auto | trajectory.jsonl — every tool call recorded (was broken for 34 days) |
+
+---
+
+## 4-Region Brain Scheduler
+
+| Region | Function | Status |
+|--------|----------|--------|
+| Cortex (皮层) | Primary model reasoning | ✅ Every CC tool call |
+| Hippocampus (海马) | FAISS semantic index + knowledge capture | ✅ FAISS auto-build on boot; auto_capture |
+| Thalamus (丘脑) | tier_router context pre-check | ✅ auto_route=True (was opt-in, now default) |
+| Brainstem (脑干) | State freshness + CHECK 15 + fuse board | ✅ CHECK 15 hard gate; symbolic_health auto-computed |
+
+**Bidding**: Every 10 rounds, 4 regions compete via weighted scores. Winner broadcasts to voice_signal.jsonl.
+
+---
+
+## Key Engineering Learnings
+
+### The 34-Day Debug
+
+CLS was designed June 2025. By July 2026, all three subsystems (cognitive loop, brain scheduler, symbolic dynamics) appeared dead. After 5 weeks of multi-model consultation (DS Pro, Kimi, Fable 5, GPT-5.5), external code audits, and byte-level file inspection:
+
+**Root cause: Four interface assumptions about Claude Code hooks were all wrong.**
+
+| Assumption | Reality | Fix |
+|-----------|---------|-----|
+| JSON fields go at top level | Must be nested in `hookSpecificOutput` | Changed `_EmitDecision` output format |
+| exit 2 blocks all tools | Only blocks Bash, not Write/Edit ([GH#13744](https://github.com/anthropics/claude-code/issues/13744)) | Changed to exit 0 + permissionDecision |
+| Writing files = CC reads them | CC only reads stdout JSON ([GH#11224](https://github.com/anthropics/claude-code/issues/11224)) | Changed to stdout `{"decision":"block"}` |
+| UTF-8 works everywhere | PS 5.1 Chinese Windows requires BOM ([GH#45065](https://github.com/anthropics/claude-code/issues/45065)) | Added `\xEF\xBB\xBF` to .ps1 files |
+
+**Lesson**: External models (DS Pro, GPT, etc.) don't know CC's internal API. CC was designed for Opus. Developing CC infrastructure requires searching official docs + GitHub Issues, not relying on model "common sense."
+
+### Other Critical Bugs
+
+- `$PWD` ≠ project root in hook execution context → MCP writes to one path, hook reads from another → permanent deny
+- `Add-Content -ErrorAction SilentlyContinue` swallows ALL errors → trajectory.jsonl never created
+- `_EmitDecision` had a PowerShell variable shadowing bug ($Decision type confusion)
+
+---
+
+## Comparison (Updated July 2026)
 
 | Approach | What it does | What CLS adds |
 |----------|-------------|--------------|
-| Raw LLM API | One-shot, stateless | 6-step cycle with state checkpoints, safety gates, and cross-step verification |
-| LangChain / LlamaIndex | Workflow orchestration + RAG | Cognitive cycle (not pipeline); dual-model verification (not self-review); stdlib-only circuit breakers |
-| AutoGPT / BabyAGI | Open-ended task decomposition | Fixed 6-step cycle — no unbounded sub-task spawning |
-| Loop Engineering (concept) | Theoretical framework | Working implementation predating the concept; dual-AI gate and fuse board as unique mechanisms |
-| Claude Code / Cursor | Developer tools with agent features | Host-independent architecture, integrable into any LLM runtime |
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│ ① Situational Awareness → ② Task Execution           │
-│        ↑                                ↓             │
-│ ⑥ Trajectory Update  ←  ③ Associative Learning       │
-│        ↓                                ↓             │
-│ ⑤ Context Persistence ← ④ Abstract Generalization    │
-└──────────────────────────┬───────────────────────────┘
-                           │
-           ┌───────────────▼───────────────┐
-           │ Fuse Board (6 stdlib fuses)   │
-           │ Dual-AI Gate (gen/verify)     │
-           │ Symbolic Dynamics Audit       │
-           └───────────────────────────────┘
-```
-
-**The 6 steps:**
-
-| Step | Name | Function |
-|------|------|----------|
-| ① | Situational Awareness | Read state files, detect parallel sessions, establish context |
-| ② | Task Execution | Scope assessment → pre-flight checks → execute → verify |
-| ③ | Associative Learning | Match new knowledge against existing patterns; flag contradictions |
-| ④ | Abstract Generalization | Distill concrete experience into transferable patterns |
-| ⑤ | Context Persistence | Write checkpoint to disk; enable cross-session recovery |
-| ⑥ | Trajectory Update | Record task evolution: delta-q (state change) and delta-p (direction change) |
-
-⑥ feeds back into ① on the next cycle.
-
----
-
-## Core Mechanisms
-
-### 1. Dual-AI Gate (generator/evaluator separation)
-
-A model should not evaluate its own output. CLS separates generation and verification:
-
-- Generator model produces output (code, documents, analysis)
-- Verifier model independently audits (correctness, consistency, safety)
-
-P(system error) = P(generator error) × P(verifier error). At 10% per model, combined error rate ≈ 1%.
-
-### 2. Fuse Board (stdlib-only circuit breakers)
-
-6 independent fuses, pure Python stdlib — no imports from the modules they protect:
-
-| Fuse | Protects against | Action |
-|------|-----------------|--------|
-| WRITE_PROTECT | Self-modification of core files | Block writes |
-| RECURSION_LIMIT | Unbounded self-reference (depth > 5) | Truncate |
-| TOKEN_BUDGET | API cost runaway | Block calls |
-| PARALLEL_CAP | Concurrent destructive ops (> 3) | Block new tasks |
-| CHECKPOINT_REQUIRED | Major change without rollback | Force save |
-| PROXY_PURITY | Semantic drift in proxy layer | Field deletion only |
-
-### 3. Symbolic Dynamics & Cross-Window Coordination
-
-- **Symbolic audit**: Compresses long conversations into 3 numbers (topological entropy, spectral radius, alert count) + 1 status word. ~200ms per check.
-- **Cross-window awareness**: Multiple sessions share a state file, mutually aware of focus, avoiding domain collisions.
-- **Fact anchoring**: Every claim must reference a concrete file path and field value. Unanchored statements are structurally rejected.
-
----
-
-## Repository Structure
-
-```
-cls-cognitive-loop/
-├── README.md / README_zh.md
-├── LICENSE (Apache 2.0)
-├── demo.py                    # One-command demo
-├── scripts/
-│   ├── core-engine/           # Cognitive loop, fuse board, gates, symbolic observer
-│   └── safety/                # Audit gate, failure learner, trust verification
-├── docs/                      # Architecture, white paper, case studies
-├── rules/                     # Safety and quality constraints
-├── workflows/                 # Reusable task pipeline definitions
-├── data/                      # Configuration and workflow definitions
-├── CLAUDE_templates/          # Host configuration templates
-└── assets/                    # Architecture diagrams
-```
+| Raw LLM API | One-shot, stateless | 6-step cycle with hard hooks, subconscious capture, cross-session state |
+| LangChain / CrewAI | Workflow orchestration | Cognitive cycle (not DAG); dual-model verification; stdlib-only circuit breakers |
+| Claude Code built-in | Developer agent | 15 deny gates, 3-tier judge, subconscious memory, brain scheduler — all via CC's own hooks |
+| llm-wiki / claude-mem | Session-end memory capture | Real-time capture every 10 rounds + subconscious model (not session-end dependent) |
+| AutoGPT / BabyAGI | Open-ended task decomposition | Fixed cycle — no unbounded sub-task spawning |
 
 ---
 
@@ -118,28 +170,53 @@ cls-cognitive-loop/
 ### Requirements
 
 - Python 3.10+
-- (Optional) A second LLM API for the dual-AI gate
+- Claude Code 2.1.195 (hooks API)
+- (Optional) SiliconFlow API key (free tier) for judge + capture
 
-### Quick verification
+### Architecture applies to any LLM runtime with hook support
+
+The cognitive cycle, brain scheduler, and judge pipeline are host-independent. The current implementation targets Claude Code hooks, but the architecture ports to any runtime that provides PreToolUse/PostToolUse/SessionStart lifecycle events.
 
 ```bash
-# Full cognitive cycle demo
-python demo.py
-
-# Fuse board self-test (stdlib only)
+# Fuse board self-test (stdlib only, no API key needed)
 python scripts/core-engine/fuse_board.py --test
+```
 
-# Dual-AI gate health check (requires API key)
-python scripts/core-engine/qwen_gate.py --health
+---
+
+## Repository Structure
+
+```
+cls-cognitive-loop/
+├── README.md
+├── LICENSE (Apache 2.0)
+├── demo.py
+├── scripts/
+│   ├── wheels/           # Production wheels:
+│   │   ├── cls_brain.py          # 4-region scheduler (308 lines)
+│   │   ├── symbolic_observer.py  # Tier-1 regex scanner (1111 lines)
+│   │   ├── symbolic_judge.py     # Tier-2 small-model judge (327 lines)
+│   │   ├── auto_capture.py       # Subconscious capture (350 lines)
+│   │   ├── api_pipeline.py       # Unified API gateway (9 providers)
+│   │   └── tier_router.py        # 6-tier cost-aware router
+│   └── hooks/            # Claude Code hook scripts
+│       ├── PreToolUse.ps1        # 15 deny gates (995 lines)
+│       ├── PostToolUse.ps1       # observer+judge+brain+capture (475 lines)
+│       └── SessionStart.ps1      # boot injection (618 lines)
+├── docs/                 # Architecture, white paper
+├── rules/                # Safety constraints
+└── paper/                # Academic paper source
 ```
 
 ---
 
 ## Design Principles
 
-1. **Interface over implementation** — Fixed signatures, swappable backends.
-2. **Constraints live outside the model** — Safety rules stored in files the model cannot modify.
-3. **Sparse activation, shared baseline** — Safety layer always on; domain modules load on demand.
+1. **Interface over implementation** — The cognitive cycle is a fixed protocol; backends are swappable.
+2. **Constraints live outside the model** — 15 deny rules in `.ps1` files the model cannot modify.
+3. **Two models, zero mutual awareness** — The subconscious capture model never sees the primary model's context.
+4. **Fail-open with audit trail** — Hook failures log to diag files but never block the main loop.
+5. **No persistent GPU daemon** — SiliconFlow free API + local Ollama on-demand only.
 
 ---
 
