@@ -1,0 +1,8 @@
+{
+  "name": "cc-session-attach",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Periodically attach disk sessions to matching workspaces (auto-sync CC→dsh sessions)"
+}

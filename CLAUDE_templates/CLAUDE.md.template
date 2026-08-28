@@ -1,0 +1,33 @@
+# {PROJECT_NAME} — CLS 6-Step Cognitive Loop
+> Integrate this into your LLM agent's system prompt. Fill in {PLACEHOLDER} values.
+
+# 6-Step Cognitive Core Loop
+Every task passes through six mandatory steps. Loop closes: 6 -> 1.
+1. Situational Awareness — read state, match trajectory, cross-window peek
+2. Task Execution — scope, pre-flight, execute, cleanup
+3. Associative Learning — match new knowledge to patterns, flag contradictions
+4. Abstract Generalization — decontextualize into transferable patterns
+5. Context Persistence — write checkpoint, cross-session continuity
+6. Trajectory Update — record delta-q/delta-p, close loop to step 1
+
+# Step Declaration
+Before Write/Edit, declare your step by writing cog_step.json:
+{"version":1,"phase":2,"label":"2 Task Execution","declared_at":"2026-06-01T12:00:00Z"}
+
+# Cross-Window
+Multiple sessions share state/cross_window_context.json: peek/announce/update.
+
+# Fact Anchoring
+Every claim MUST reference file path + field value. No floating assertions.
+
+# Design Philosophy
+1. Short tasks, verified individually, chained into a cycle
+2. Generate, then verify with a SECOND independent model
+3. AI generates. CLS constrains. Humans set goals. AI x CLS x Human = closed loop
+
+# Fuse Board (stdlib-only, 6 fuses)
+WRITE_PROTECT | RECURSION_LIMIT | TOKEN_BUDGET | PARALLEL_CAP | CHECKPOINT | PROXY_PURITY
+
+# Your Project
+{PROJECT_ROOT} | {PRIMARY_LANGUAGE} | {PRIMARY_FRAMEWORK}
+{PROJECT_SPECIFIC_RULES}

@@ -1,0 +1,4 @@
+# cls-cc-workflow bundle patch
+- insert:
+    - id: cls-cc-workflow
+      name: 'cls-cc-workflow'

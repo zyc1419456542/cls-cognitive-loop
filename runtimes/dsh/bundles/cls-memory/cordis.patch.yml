@@ -1,0 +1,7 @@
+# cls-memory bundle patch: CLS 记忆/知识联想插件
+- insert:
+    - id: cls-memory
+      name: 'cls-memory'
+      config:
+        enabled: true
+        minImportance: 3

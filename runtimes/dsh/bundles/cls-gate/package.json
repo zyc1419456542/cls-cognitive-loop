@@ -1,0 +1,14 @@
+{
+  "name": "cls-gate",
+  "version": "0.1.0",
+  "description": "CLS 工具硬闸插件(harness 移植版): 危险命令 deny / API Key 泄露 deny / 失败循环 deny / 应急旁路",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

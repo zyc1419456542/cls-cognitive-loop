@@ -1,0 +1,4 @@
+# cls-cc-commands bundle patch
+- insert:
+    - id: cls-cc-commands
+      name: 'cls-cc-commands'

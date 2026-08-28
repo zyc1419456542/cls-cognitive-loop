@@ -1,0 +1,7 @@
+# cls-gate bundle patch: CLS 工具硬闸插件
+- insert:
+    - id: cls-gate
+      name: 'cls-gate'
+      config:
+        enabled: true
+        loopThreshold: 5

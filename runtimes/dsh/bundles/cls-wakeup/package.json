@@ -1,0 +1,14 @@
+{
+  "name": "cls-wakeup",
+  "version": "0.1.0",
+  "description": "会话恢复自动唤醒插件(心跳机制 web 侧): resume 后自动发送续跑指令",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

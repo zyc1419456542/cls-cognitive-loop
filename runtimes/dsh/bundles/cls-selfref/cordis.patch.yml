@@ -1,0 +1,6 @@
+# cls-selfref bundle patch: 内循环外部化 (iter-026 任务3)
+- insert:
+    - id: cls-selfref
+      name: 'cls-selfref'
+      config:
+        enabled: true

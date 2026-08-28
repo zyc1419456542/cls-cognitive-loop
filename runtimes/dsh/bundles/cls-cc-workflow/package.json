@@ -1,0 +1,14 @@
+{
+  "name": "cls-cc-workflow",
+  "version": "0.1.0",
+  "description": "Claude Code workflow 桥接(phase6): run_cc_workflow 工具直执行 .claude/workflows/*.js",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

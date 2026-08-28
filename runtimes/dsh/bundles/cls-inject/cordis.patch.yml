@@ -1,0 +1,8 @@
+# cls-inject bundle patch: CLS 认知注入插件
+- insert:
+    - id: cls-inject
+      name: 'cls-inject'
+      config:
+        enabled: true
+        driftThreshold: 0.12
+        maxInjectPerTurn: 2

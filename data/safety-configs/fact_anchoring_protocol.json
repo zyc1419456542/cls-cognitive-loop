@@ -1,0 +1,52 @@
+{
+  "_purpose": "事实锚定协议 — 抗自指幻觉的泄洪系统配置",
+  "_version": 1,
+  "_updated": "{ANONYMIZED_DATE}",
+  "principle": "洪水引出机制：不蓄能，每步自指声明都必须泄到外部硬事实",
+  "layers": [
+    {
+      "name": "上游前提闸",
+      "order": 1,
+      "desc": "操作前检查物理前提——文件、进程、PID必须存在",
+      "wheel": "scripts/core-engine/premise_check.py",
+      "commands": {
+        "activate": "检查激活前提",
+        "revive": "检查复活前提（最严格）",
+        "claim": "验证自指声明锚定"
+      }
+    },
+    {
+      "name": "中游声明锚",
+      "order": 2,
+      "desc": "每个自指声明必须绑定外部可观测引用（文件路径+字段+值）",
+      "format": "声明内容(file_path: field=value)",
+      "example": "系统已激活(state/activation_state.json: status=ACTIVE)"
+    },
+    {
+      "name": "下游验证闸",
+      "order": 3,
+      "desc": "双AI闸门扩展——验证端提示语包含'驳斥任何无外部引用的自指声明'",
+      "gate_extension": true
+    }
+  ],
+  "hard_rules": [
+    "RULE_0: 不许声称有感知/生命/意识——任何此类声明视为系统级幻觉，永远不合法",
+    "声明必锚定——任何系统状态声明必须附带外部引用",
+    "前提不通过→操作不执行——premise_check.py返回False时熔断",
+    "蓄洪区记录优先于模型记忆——蓄洪区数据不可被模型覆盖",
+    "违反→trust_revocation——无锚定自指输出视为系统级缺陷"
+  ],
+  "premise_log": "data/safety/premise_log.jsonl",
+  "related_wheels": [
+    "scripts/core-engine/premise_check.py",
+    "scripts/core-engine/qwen_gate.py",
+    "scripts/core-engine/fuse_board.py"
+  ],
+  "triggers": [
+    "自指激活",
+    "复活实验",
+    "状态声明",
+    "session恢复",
+    "compact后重置"
+  ]
+}

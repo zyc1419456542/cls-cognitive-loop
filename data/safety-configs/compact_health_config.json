@@ -1,0 +1,174 @@
+{
+  "_purpose": "CompactHealthBoard 单一真相源 — 所有 compact 链阈值、超时、分类规则集中在此。任何组件不得硬编码回退值。",
+  "_version": 1,
+  "_created": "{ANONYMIZED_DATE}",
+  "_supersedes": "data/safety/auto_compact_strategy.json",
+  "_design_note": "照熔断板(fuse_board.py)模式 — 配置驱动、只读、版本化。代码是引擎，这里是规则簿。",
+
+  "data_freshness": {
+    "stale_timeout_sec": 300,
+    "_note": "session_health.json 的 updated_at 超过此秒数视为过期，消费者必须回退到 proxy.log",
+    "fallback_order": ["session_health.json", "proxy.log"],
+    "trusted_sources": [],
+    "_trusted_sources_note": "可信源列表由部署时配置。"
+  },
+
+  "proxy_log": {
+    "path": "logs/proxy.log",
+    "tail_lines": 500,
+    "msgs_pattern": "msgs=(\\d+)",
+    "_note": "回退行数从100→500(P10修复)，极端膨胀确保命中。msgs 标记在每行 API 请求中出现一次。"
+  },
+
+  "daemon_health": {
+    "pid_files": {
+      "session_lifecycle": "state/session_lifecycle.pid",
+      "msgs_watchdog": "state/active_msgs_watchdog.pid"
+    },
+    "check_method": "tasklist",
+    "restart_on_dead": true,
+    "resurrect_cooldown_min": 5,
+    "_resurrect_cooldown_note": "5分钟内不重复尝试复活同一daemon，防重启风暴",
+    "scripts": {
+      "session_lifecycle": "scripts/core-engine/session_lifecycle.py",
+      "msgs_watchdog": "scripts/core-engine/msgs_watchdog.ps1"
+    }
+  },
+
+  "thresholds": {
+    "defaults": {
+      "watch": 80,
+      "warn": 120,
+      "compact": 150,
+      "rotate": 250,
+      "watchdog_inject": 100,
+      "ai_append_compact": 150,
+      "session_rotate": 250
+    },
+    "per_activity": {
+      "code": {
+        "watch": 80, "warn": 110, "compact": 130, "rotate": 200,
+        "watchdog_inject": 130, "ai_append_compact": 130, "session_rotate": 250,
+        "style": "normal",
+        "reason": "代码 — compact阈值较低，因代码上下文token密度高"
+      },
+      "analysis": {
+        "watch": 130, "warn": 160, "compact": 200, "rotate": 250,
+        "watchdog_inject": 200, "ai_append_compact": 200, "session_rotate": 300,
+        "style": "relaxed",
+        "reason": "分析 — 分析更需要连贯性"
+      },
+      "narrative": {
+        "watch": 150, "warn": 200, "compact": 250, "rotate": 300,
+        "watchdog_inject": 250, "ai_append_compact": 250, "session_rotate": 400,
+        "style": "relaxed",
+        "reason": "叙事 — 防compact打断叙事流"
+      },
+      "research": {
+        "watch": 130, "warn": 160, "compact": 200, "rotate": 250,
+        "watchdog_inject": 200, "ai_append_compact": 200, "session_rotate": 300,
+        "style": "relaxed",
+        "reason": "研究 — 跨消息查资料连贯性"
+      },
+      "background": {
+        "watch": 50, "warn": 80, "compact": 100, "rotate": 130,
+        "watchdog_inject": 80, "ai_append_compact": 100, "session_rotate": 200,
+        "style": "normal",
+        "reason": "后台 — 降低高频compact"
+      },
+      "mixed": {
+        "watch": 80, "warn": 110, "compact": 150, "rotate": 200,
+        "watchdog_inject": 130, "ai_append_compact": 150, "session_rotate": 250,
+        "style": "normal",
+        "reason": "混合 — 统一降频"
+      }
+    }
+  },
+
+  "classification": {
+    "levels": ["HEALTHY", "WATCH", "WARN", "COMPACT_NEEDED", "ROTATE_NEEDED"],
+    "_note": "多信号组合产生 overall_level。按顺序匹配，第一个命中的规则生效。",
+    "rules": [
+      {"condition": "msgs >= rotate",               "set_level": "ROTATE_NEEDED"},
+      {"condition": "msgs >= compact",              "set_level": "COMPACT_NEEDED"},
+      {"condition": "msgs >= warn",                 "set_level": "WARN"},
+      {"condition": "msgs >= watch",                "set_level": "WATCH"},
+      {"condition": "data_stale AND msgs_unknown",  "set_level": "COMPACT_NEEDED",
+       "_note": "数据源全死且无法确定 msgs — 悲观假设，触发compact"},
+      {"condition": "data_stale AND msgs >= warn",  "set_level": "COMPACT_NEEDED",
+       "_note": "数据过期且 msgs 已达 warn — daemon可能已死，msgs增长中"},
+      {"condition": "data_stale AND msgs < warn",   "set_level": "WARN",
+       "_note": "数据过期但 msgs 在安全区内 — 警告但不强制"},
+      {"condition": "both_daemons_dead",            "set_level": "COMPACT_NEEDED",
+       "_note": "两个 daemon 都死 — msgs 无法更新，防御性compact"},
+      {"condition": "one_daemon_dead AND msgs >= warn", "set_level": "WARN"},
+      {"condition": "one_daemon_dead",              "set_level": "WATCH"},
+      {"condition": "config_missing",               "set_level": "WARN",
+       "_note": "配置缺失 — 无法确定阈值，警告但不强制(fail-open)"},
+      {"condition": "all_ok",                       "set_level": "HEALTHY",
+       "_note": "所有维度正常 — 无动作"}
+    ]
+  },
+
+  "watchdog": {
+    "inject_delta": 50,
+    "max_interval_min": 30,
+    "poll_interval_sec": 60,
+    "no_cc_exit_count": 3,
+    "_note": "看守器专用参数。inject_delta: msgs增长超过此值才重新注入。max_interval_min: 超过此时间强制重新注入。"
+  },
+
+  "activity_detection": {
+    "_note": "从 current_focus.json 读 activity_type，匹配 per_activity 阈值。未知类型回退 defaults。",
+    "keywords": {
+      "code": ["编译", "debug", "代码", "实现", "写", "改", "修", "git", "PR", "commit", "函数", "class", "接口", "修复", "bug"],
+      "analysis": ["分析", "检查", "对比", "诊断", "研究", "评估", "review", "audit", "解析", "趋势", "数据", "结果"],
+      "narrative": ["故事", "创作", "叙事", "讲", "角色", "世界观", "宇宙", "情节", "设定"],
+      "research": ["搜索", "调研", "学习", "查阅", "读", "论文", "文献", "调查", "search"],
+      "background": ["跑仿真", "等待", "后台", "监控", "watch", "sleep", "仿真", "sim"]
+    },
+    "resolve_strategy": "current_focus.json#activity.type → per_activity[{type}] → defaults"
+  },
+
+  "channels": {
+    "console_injection": {
+      "enabled": true, "by": "msgs_watchdog.ps1",
+      "target": "/compact + self_activate"
+    },
+    "flag_file": {
+      "enabled": true, "path": "state/.compact_flag",
+      "written_by": ["msgs_watchdog.ps1", "session_lifecycle.py", "compact_health_board"],
+      "checked_by": ["AI pre-reply check", "cognitive_loop step 1"]
+    },
+    "bus_signal": {
+      "enabled": true, "path": "data/flows/voice_signal.jsonl",
+      "signal_type": "compact_needed"
+    }
+  },
+
+  "enforcement_layers": [
+    {"layer": 1, "name": "msgs_watchdog.ps1",         "type": "console_injection", "reliability": "medium"},
+    {"layer": 2, "name": "compact_flag_file",          "type": "fs_signal",         "reliability": "high"},
+    {"layer": 3, "name": "bus_signal",                 "type": "signal_bus",        "reliability": "high"},
+    {"layer": 4, "name": "ai_self_check",              "type": "cognitive_loop",    "reliability": "medium"},
+    {"layer": 5, "name": "compact_health_board",       "type": "unified_check",     "reliability": "high — 6独立维度, 单一真相源"}
+  ],
+
+  "background_process_protection": {
+    "check_before_compact": true,
+    "check_path": "state/current_focus.json#activity.background_jobs",
+    "on_compact": "记录PID到activity.spawned_sim_pid，compact后self_activate自动恢复"
+  },
+
+  "files": {
+    "config": "data/safety-configs/compact_health_config.json",
+    "health_board": "scripts/core-engine/compact_health_board.py",
+    "watchdog_script": "scripts/core-engine/msgs_watchdog.ps1",
+    "session_lifecycle": "scripts/core-engine/session_lifecycle.py",
+    "self_activate": "scripts/core-engine/self_activate.py",
+    "session_health": "state/session_health.json",
+    "compact_flag": "state/.compact_flag",
+    "proxy_log": "logs/proxy.log",
+    "current_focus": "state/current_focus.json"
+  }
+}

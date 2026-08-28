@@ -1,0 +1,159 @@
+{
+  "version": 2,
+  "created_at": "{ANONYMIZED_DATE}",
+  "description": "熔断板配置 — 自指系统管不住自己，靠外部硬编码兜底",
+  "notes": "只能手动修改。自指系统没有写入此文件的权限。",
+  "policy": {
+    "auto_reset_after_hours": 24,
+    "max_fuse_log_lines": 1000,
+    "notify_on_trip": true
+  },
+  "fuses": {
+    "WRITE_PROTECT": {
+      "enabled": true,
+      "description": "阻止自指系统修改核心依赖文件",
+      "action": "block",
+      "protected_patterns": [
+        "scripts/core-engine/fuse_board.py",
+        "scripts/core-engine/self_activate.py",
+        "scripts/core-engine/ds_passthrough.py",
+        "scripts/core-engine/activation_listener.py",
+        "scripts/core-engine/semantic_service.py",
+        "scripts/core-engine/semantic_index.py",
+        "scripts/core-engine/semantic_query.py",
+        "CLAUDE.md",
+        ".githooks/pre-commit",
+        "data/safety-configs/fuses_config.json",
+        "data/safety-configs/manifest.json",
+        "data/location_registry.json",
+        ".gitignore",
+        "data/search_index/*",
+        "scripts/mcp_desktop_perception.py",
+        "scripts/core-engine/qwen_gate.py"
+      ]
+    },
+    "RECURSION_LIMIT": {
+      "enabled": true,
+      "description": "自指嵌套深度上限 — 自动100→150→270 Token暴涨的教训",
+      "action": "truncate",
+      "max_depth": 5,
+      "cooldown_minutes": 30
+    },
+    "TOKEN_BUDGET": {
+      "enabled": true,
+      "description": "Token消耗硬上限 — 烧钱不止的教训",
+      "action": "block_api",
+      "daily_limit": 2000000,
+      "session_limit": 500000,
+      "per_call_limit": 80000
+    },
+    "PARALLEL_CAP": {
+      "enabled": true,
+      "description": "同时推进的边界变更上限",
+      "action": "block_new",
+      "max_parallel": 3
+    },
+    "CHECKPOINT_REQUIRED": {
+      "enabled": true,
+      "description": "重大变更前强制保存状态",
+      "action": "force_save",
+      "checkpoint_path": "data/checkpoints/",
+      "min_interval_seconds": 300
+    },
+    "PROXY_PURITY": {
+      "enabled": true,
+      "description": "代理层禁止语义变换 — P07全线崩溃的教训",
+      "action": "block",
+      "allowed_operations": [
+        "delete_field:reasoning_effort",
+        "delete_field:thinking"
+      ],
+      "forbidden_patterns": [
+        "content_modification",
+        "sse_injection",
+        "value_injection"
+      ]
+    },
+    "NUMERIC_COMPUTATION": {
+      "enabled": true,
+      "description": "所有数值计算必须走本地轮子 — 不相信模型的数字推理",
+      "action": "block",
+      "registered_wheels": {
+        "trust_score": "scripts/core-engine/audit_history.py",
+        "composition_signature": "scripts/core-engine/audit_history.py",
+        "audit_trend": "scripts/core-engine/audit_history.py",
+        "slo_compliance": "scripts/core-engine/slo_checker.py",
+        "topological_entropy": "scripts/core-engine/reasoning_entropy.py",
+        "spectral_radius": "scripts/core-engine/reasoning_entropy.py",
+        "priority_score": "scripts/core-engine/priority_scorer.py",
+        "confidence_score": "scripts/core-engine/confidence_scorer.py",
+        "benchmark_health": "scripts/core-engine/benchmark_scorer.py",
+        "assertion_activity": "scripts/core-engine/benchmark_scorer.py",
+        "assertion_completeness": "scripts/core-engine/benchmark_scorer.py",
+        "assertion_accuracy": "scripts/core-engine/benchmark_scorer.py",
+        "vital_signs": "scripts/core-engine/vital_signs_monitor.py",
+        "cache_hit_rate": "scripts/core-engine/vital_signs_monitor.py",
+        "deployed_validation": "scripts/core-engine/validate_deployed.py",
+        "api_budget_usage": "scripts/core-engine/budget_enforcer.py",
+        "daemon_uptime": "scripts/core-engine/slo_checker.py",
+        "knowledge_health": "scripts/core-engine/slo_checker.py"
+      }
+    },
+    "SELF_EVALUATION_PROHIBITED": {
+      "enabled": true,
+      "description": "禁止自我评价 — 创造层不碰评价层。{CREATOR}只交设计思路·过程轨迹·产出物，{HUMAN_REVIEWER}做最终裁决。",
+      "action": "block",
+      "triggers": {
+        "every_output": true,
+        "cognitive_loop_step": "pre_persist"
+      },
+      "forbidden_patterns": [
+        "验证通过", "确认正确", "我检查了", "没有问题", "验证完毕",
+        "正确性", "已核实", "已确认", "没问题", "保证正确",
+        "verified", "checked", "验证通过", "已检验"
+      ],
+      "allowed_exceptions": [
+        "用户明确要求自我评价",
+        "元讨论关于此熔断器本身"
+      ]
+    },
+    "DUAL_AI_GATE": {
+      "enabled": true,
+      "description": "双AI闸门 — 所有产出/学习过独立验证。统计学降幻觉。",
+      "action": "block",
+      "flag_action": "allow",
+      "triggers": {
+        "cad_design": true,
+        "knowledge_capture": true,
+        "pattern_update": true,
+        "deliverable": true
+      },
+      "allowed_exceptions": [
+        "验证 API 不可用时后备自动接管审计 (fallback)",
+        "验证端+后备同时不可用时默认放行 (gate_status=unavailable)",
+        "flag_action=allow: flag 只是可疑不致命, 默认放行等待人工确认"
+      ]
+    },
+    "QWEN_DOWN_TOO_LONG": {
+      "enabled": true,
+      "description": "验证端离线过长 — 连续不可用超阈值时阻断需验证的产出，防止防线裸奔。",
+      "action": "block",
+      "thresholds": {
+        "notify_minutes": 10,
+        "fuse_minutes": 30,
+        "recovery_double_verify_minutes": 30
+      },
+      "block_targets": [
+        "knowledge_capture",
+        "cad_design",
+        "numerical_computation",
+        "deliverable"
+      ],
+      "allowed_exceptions": [
+        "日常对话不受影响——只阻断标注为需验证的产出类型",
+        "后备审计自动接管，维持24h知识循环不中断",
+        "验证端恢复后 30min 双重验证过渡"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "cls-cycle",
+  "version": "0.1.0",
+  "description": "认知核心循环接线(CLS 三大基础功能 A): cog_step 只读感知 + 收尾提醒",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

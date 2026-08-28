@@ -1,0 +1,4 @@
+# 记忆摘要模型 — GGUF f16
+# 创建: ollama create ep-mem -f Modelfile.ep-mem
+# 2026-08-14: 3字段(topic/key_points/decisions) 75条, loss 0.117
+FROM <REPO_ROOT>/model-training/runs/2026-08-15_mem/ep-mem-v2-f16.gguf

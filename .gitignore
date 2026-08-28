@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Keys & secrets
+keys/
+*.key
+*.pem
+*.env
+*api_key*
+*_secret*
+*_token*
+.env*
+
+# Dev artifacts
+*.tmp
+*.log
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CLS runtime-generated state (never commit session state)
+data/state/
+state/
+deliveries/
+knowledge/kg_cards.json
+consult_clear.json
+cd_last.json
+ops_freq.jsonl
+gate_audit.jsonl
+injection_require.jsonl
+
+# Training weights (reproduce via model-training/scripts)
+*.gguf
+model-training/runs/
+adapter/
+checkpoint-*/

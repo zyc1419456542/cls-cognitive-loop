@@ -1,0 +1,14 @@
+{
+  "name": "cls-cc-commands",
+  "version": "0.1.0",
+  "description": "Claude Code 命令桥接(phase6): 扫描 .claude/commands/*.md 注册 harness 命令",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

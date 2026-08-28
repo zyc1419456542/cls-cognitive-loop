@@ -1,0 +1,4 @@
+# cls-wakeup bundle patch: 会话恢复自动唤醒
+- insert:
+    - id: cls-wakeup
+      name: 'cls-wakeup'

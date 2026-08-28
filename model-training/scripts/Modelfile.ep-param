@@ -1,0 +1,5 @@
+# EP 参数提取模型 (商用垂直工具雏形) — GGUF f16 创建
+# 创建: ollama create ep-param -f Modelfile.ep-param
+# 2026-08-14 增强版: 科学计数法/mode规范化/负样本/字段缺失/指数答案 (288条, loss 0.0455)
+# 注: safetensors 直创(--experimental)在 Windows 报 MLX 错误, 必须走 GGUF
+FROM <REPO_ROOT>/model-training/runs/2026-08-16_param/ep-param-v4-f16.gguf

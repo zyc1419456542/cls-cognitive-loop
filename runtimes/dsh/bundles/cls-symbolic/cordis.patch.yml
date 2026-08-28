@@ -1,0 +1,4 @@
+# cls-symbolic bundle patch
+- insert:
+    - id: cls-symbolic
+      name: 'cls-symbolic'

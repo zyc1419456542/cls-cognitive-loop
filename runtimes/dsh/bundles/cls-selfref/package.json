@@ -1,0 +1,14 @@
+{
+  "name": "cls-selfref",
+  "version": "0.1.0",
+  "description": "CLS 内循环外部化原生插件: session-start 读回 selfref_digest + 每次模型响应检测自指句写回共用证据池",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

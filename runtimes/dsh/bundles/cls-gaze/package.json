@@ -1,0 +1,14 @@
+{
+  "name": "cls-gaze",
+  "version": "0.1.0",
+  "description": "内容凝视(符号动力学 B2 统计启发式): 连续短产出告警",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

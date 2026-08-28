@@ -1,0 +1,4 @@
+# EP JSON 微调模型 (方案A写回) — 从 merged safetensors 创建
+# 用途: CLS small_model 的 classify/summarize 本地化
+# 创建: ollama create ep-json --experimental -q q4_K_M -f Modelfile.ep-json
+FROM <REPO_ROOT>/model-training/runs/2026-08-08_json/ep-json-f16.gguf

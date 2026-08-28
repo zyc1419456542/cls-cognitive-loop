@@ -1,0 +1,4 @@
+# cls-gaze bundle patch
+- insert:
+    - id: cls-gaze
+      name: 'cls-gaze'

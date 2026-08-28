@@ -1,0 +1,14 @@
+{
+  "name": "cls-inject",
+  "version": "0.1.0",
+  "description": "CLS 认知注入插件(harness 移植版): 任务锚点/漂移检测/L4 深度路由/注入审计",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

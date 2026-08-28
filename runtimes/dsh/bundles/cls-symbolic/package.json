@@ -1,0 +1,14 @@
+{
+  "name": "cls-symbolic",
+  "version": "0.1.0",
+  "description": "符号动力学接线(CLS 三大基础功能 B): 禁用词闸门 + L0 路由",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

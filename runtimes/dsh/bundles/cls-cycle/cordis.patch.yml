@@ -1,0 +1,4 @@
+# cls-cycle bundle patch
+- insert:
+    - id: cls-cycle
+      name: 'cls-cycle'

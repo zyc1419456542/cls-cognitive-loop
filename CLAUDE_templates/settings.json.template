@@ -1,0 +1,60 @@
+{
+  "_comment": "CLS hook registration template. Copy relevant parts into .claude/settings.json of your project. Replace <REPO_ROOT> with the absolute path of this checkout. Windows-first: hooks are PowerShell 5.1-compatible; _run_hidden.py suppresses console flash. All hooks fail-open.",
+  "env": {
+    "CLS_REPO_ROOT": "<REPO_ROOT>",
+    "PYTHONUTF8": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/PreToolUse.ps1\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/PostToolUse.ps1\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/UserPromptSubmit.ps1\"" },
+          { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/PromptSubmit.ps1\"" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/SessionStart.ps1\"", "timeout": 300 }
+        ]
+      }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/PreCompact.ps1\"" } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/PostCompact.ps1\"" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/Stop.ps1\"", "timeout": 60 } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "python \"<REPO_ROOT>/hooks/_run_hidden.py\" \"<REPO_ROOT>/hooks/SessionEnd.ps1\"" } ] }
+    ]
+  }
+}

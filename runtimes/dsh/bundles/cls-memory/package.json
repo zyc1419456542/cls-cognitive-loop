@@ -1,0 +1,14 @@
+{
+  "name": "cls-memory",
+  "version": "0.1.0",
+  "description": "CLS 记忆/知识联想插件(harness 移植版): kg_index 实体命中注入, 低频去重",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {}
+}

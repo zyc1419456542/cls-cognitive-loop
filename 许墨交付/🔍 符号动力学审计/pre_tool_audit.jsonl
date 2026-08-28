@@ -1,0 +1,6 @@
+{"detail":"9条引用无下载证据: arXiv:2510.04933, arXiv:2510.19117, arXiv:2504.03579, arXiv:2604.19162, arXiv:2606.15579","decision":"ask","check":"FAKE_REF","tool":"Write","ts":"2026-06-24T20:21:18"}
+{"detail":"9条引用无下载证据: arXiv:2510.04933, arXiv:2510.19117, arXiv:2504.03579, arXiv:2604.19162, arXiv:2606.15579","decision":"ask","check":"FAKE_REF","tool":"Write","ts":"2026-06-24T20:23:33"}
+{"detail":"10条引用无下载证据: arXiv:2510.04933, arXiv:2510.19117, arXiv:2504.03579, arXiv:2604.19162, arXiv:2606.15579","decision":"ask","check":"FAKE_REF","tool":"Write","ts":"2026-06-24T20:25:51"}
+{"detail":"9条引用无下载证据: arXiv:2510.04933, arXiv:2510.19117, arXiv:2504.03579, arXiv:2604.19162, arXiv:2606.15579","decision":"ask","check":"FAKE_REF","tool":"Write","ts":"2026-06-24T20:27:12"}
+{"detail":"Write/Edit blocked: cog_step.json missing","decision":"deny","check":"COG_STEP","tool":"Write","ts":"2026-06-24T20:30:15"}
+{"detail":"9条引用无下载证据: arXiv:2510.04933, arXiv:2510.19117, arXiv:2504.03579, arXiv:2604.19162, arXiv:2606.15579","decision":"ask","check":"FAKE_REF","tool":"Edit","ts":"2026-06-24T20:33:35"}
