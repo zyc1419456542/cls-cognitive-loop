@@ -603,7 +603,7 @@ try {
         $hasMathEnv = $cgContent -match '\\\\begin\{(?:align|equation|gather|multline|split|aligned|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array|math)\*?\}' -or $cgContent -match $mathDisplayPattern -or $cgContent -match '(?<!\$)\$\$(?!\$)'
         if ($hasMathEnv -or $isTexFile) {
             $cgDomain2 = "math"
-            if ($cgFile -match '\\b(?:physics?|物理|电推进|等离子)') { $cgDomain2 = "physics" }
+            if ($cgFile -match '\\b(?:physics?|物理|<DOMAIN>|等离子)') { $cgDomain2 = "physics" }
             elseif ($cgFile -match '\\b(?:stat|prob|probab|统计|概率)') { $cgDomain2 = "stats" }
             elseif ($cgFile -match '\\b(?:cad|3d|model)') { $cgDomain2 = "cad" }
             try {

@@ -100,10 +100,10 @@ def _sf_classify(text: str) -> dict:
     try:
         from cls_api_fallback import chat
         # @fix 2026-08-14 一号机融合: 残缺JSON骨架prompt误导Qwen2.5-7B输出畸形JSON
-        # (kg_index domains 曾出现 "技术术"/"霍尔尔尔推推器器" 等脏值) → 完整合法JSON示例
+        # (kg_index domains 曾出现 "技术术"/"<DOMAIN>尔尔推推器器" 等脏值) → 完整合法JSON示例
         response = chat(
             messages=[
-                {"role": "system", "content": '你是知识分类器。domain必须从[cad,pic,quant,cls,general]中选一个: cad=机械/CAD设计, pic=等离子/仿真, quant=量化交易, cls=认知系统/CLS, general=其他。输出合法JSON,格式严格如下(必须保留冒号和引号):\n{"domain":"cls","entities":["关键术语1","关键术语2"],"summary":"一句话摘要不超过30字","importance":"high"}\n只输出JSON,不要解释。'},
+                {"role": "system", "content": '你是知识分类器。domain必须从[cad,pic,quant,cls,general]中选一个: cad=机械/CAD设计, pic=<介质>/仿真, quant=量化交易, cls=认知系统/CLS, general=其他。输出合法JSON,格式严格如下(必须保留冒号和引号):\n{"domain":"cls","entities":["关键术语1","关键术语2"],"summary":"一句话摘要不超过30字","importance":"high"}\n只输出JSON,不要解释。'},
                 {"role": "user", "content": text[:500]}
             ],
             max_tokens=150, temperature=0.1, timeout=10
@@ -122,7 +122,7 @@ def _fallback_classify(text: str) -> dict:
     """无模型降级: 纯关键词分类"""
     text_lower = text.lower()
     domain = "general"
-    for kw, dom in [("cad", "cad"), ("pic", "pic"), ("等离子", "pic"),
+    for kw, dom in [("cad", "cad"), ("pic", "pic"), ("<介质>", "pic"),
                      ("量化", "quant"), ("cls", "cls"), ("认知", "cls"),
                      ("符号", "cls"), ("闸门", "cls")]:
         if kw in text_lower: domain = dom; break

@@ -361,7 +361,7 @@ def capability_lookup(
     """查询能力路由器，找到处理指定任务的轮子。
 
     Args:
-        task_text: 任务描述（自然语言），如"画一个CAD零件图"、"搜索霍尔推力器论文"
+        task_text: 任务描述（自然语言），如"画一个CAD零件图"、"搜索<DOMAIN设备>论文"
 
     Returns:
         JSON: {matched_tool, path, usage, confidence}
@@ -885,7 +885,7 @@ def paper_search_s2(
 @mcp.tool(
     name="cls-paper-search-download",
     description="🔴 文献调研首选。一键完成：搜索arXiv→下载PDF→提取全文文本→输出论文来源、下载路径、核心内容。"
-    "查询电推进/等离子体/霍尔推力器论文时优先用此，避免只搜不下载(incident-log#61)。最多5篇。"
+    "查询<DOMAIN>/<介质>/<DOMAIN设备>论文时优先用此，避免只搜不下载(incident-log#61)。最多5篇。"
     "输出含：arxiv链接、PDF本地路径、全文txt路径、摘要、关键段落。",
 )
 def paper_search_download(
@@ -1761,14 +1761,14 @@ def _get_numpy_encoder():
 )
 def pic_engineering_analyze_tool(
     field_path: str = "",
-    anode_voltage: float = 300.0,
+    partB_voltage: float = 300.0,
     mass_flow_kg_s: float = 1.34e-6,
 ) -> str:
     """运行 PIC 工程分析三合一。
 
     Args:
         field_path: FIELD_AVG.DAT 完整路径. 空则使用默认.
-        anode_voltage: 阳极电压 [V]
+        partB_voltage: <部件B>电压 [V]
         mass_flow_kg_s: 质量流量 [kg/s]
 
     Returns: JSON
@@ -1808,7 +1808,7 @@ def pic_engineering_analyze_tool(
         hist = {
             "i_dis_total": 1.031, "i_ion_total": 0.855,
             "thrust_mN": 14.82, "isp_s": 1163,
-            "eff_anode": 0.273, "eff_utility": 0.570,
+            "eff_partB": 0.273, "eff_utility": 0.570,
             "eff_current": 0.829,
         }
 
@@ -1816,7 +1816,7 @@ def pic_engineering_analyze_tool(
             analyze_efficiency, analyze_erosion_proxy, analyze_particle_balance,
             ChannelConfig,
         )
-        cfg = ChannelConfig(anode_voltage=anode_voltage, mass_flow=mass_flow_kg_s)
+        cfg = ChannelConfig(partB_voltage=partB_voltage, mass_flow=mass_flow_kg_s)
 
         eff = analyze_efficiency(cl, hist, {}, cfg)
         epi = analyze_erosion_proxy(data, var_idx, x, y, cfg)
@@ -2624,7 +2624,7 @@ def cog_step_declare(
             (("代理", "proxy", "中间层", "网关", "转发"), "proxy_middleware"),
             # @fix 2026-09-12 自测抓出: 原写 "声明" 太泛(几乎每次声明都命中), 改为具体术语
             (("注入", "闸门", "hook", "gate", "门禁", "cog_step", "cog-step"), "injection_gate"),
-            (("数据", "分析", "实验", "谱", "探针", "文献", "论文"), "data_authenticity"),
+            (("数据", "分析", "实验", "谱", "<传感器>", "文献", "论文"), "data_authenticity"),
             # @fix 2026-09-12 自测抓出: 原写裸 "step" 会误命中 "cog_step" → 改成 "stp"
             (("cad", "build123d", "freecad", "建模", "装配", "几何", "榫卯", "stp", "nx "), "cad_sim"),
             (("模型", "配置", "路由", "effort", "api", "token", "计费"), "config_route"),
@@ -3390,14 +3390,14 @@ def cls_activation_lab(action: str = "inject", lines: int = 30) -> dict:
 @mcp.tool(
     name="cls-param-extract",
     description="EP 参数提取混合管线 — 规则筛句 → 自产模型 ep-param 提取 → 锚定兜底。"
-    "输入探针/实验报告文本，输出参数 JSON（flow/Ib/B/eff_dim/mode 等）。"
+    "输入<传感器>/实验报告文本，输出参数 JSON（flow/Ib/B/eff_dim/mode 等）。"
     "无参数文本直接返回空对象（零模型调用零编造）。",
 )
 def param_extract(text: str) -> dict:
     """从 EP 实验文本提取参数（混合管线，自产模型 ep-param）。
 
     Args:
-        text: 探针/实验报告文本段落
+        text: <传感器>/实验报告文本段落
 
     Returns:
         {"ok": True, "params": {...}, "model_called": bool}
@@ -3601,13 +3601,13 @@ def card_supersede(
 @mcp.tool(
     name="cross-knowledge-probe",
     description="本地跨界知识联想 (管线Research口专用·maintainer2026-08-27定) — 输入设计需求/任务原文, "
-    "后台先把任务抽到功能本质层(手机→人体工学式联想)发4条通用探针, "
+    "后台先把任务抽到功能本质层(手机→人体工学式联想)发4条通用<传感器>, "
     "再对知识卡片做 历史相关/近似相关/跨界相关 三类精选(跨界≤2张且强制同构半句), "
     "返回四段信封文本。[跨界]卡=灵感非约束。返回空串=无相关或后端不可用, 调用方直接跳过勿重试。"
     "CAD管线Research阶段在WebSearch外搜之前先调本工具。",
 )
 def cross_knowledge_probe(task: str) -> str:
-    """跨界知识联想查询: 功能本质探针 → 卡片总线跨域匹配。
+    """跨界知识联想查询: 功能本质<传感器> → 卡片总线跨域匹配。
 
     Args:
         task: 设计需求或任务描述原文 (≥8字)
