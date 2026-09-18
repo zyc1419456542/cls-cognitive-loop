@@ -46,7 +46,7 @@ JUDGE_SYSTEM = """你是CLS认知操作系统的异常裁决模块。你的职�
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
-def call_small_model(prompt: str, timeout_s: int = 15) -> str | None:
+def call_small_model(prompt: str, timeout_s: int = 30) -> str | None:  # @fix 2026-09-05: 15→30s SF免费档长prompt裕量
     """调用裁决模型 — 硅基流动Qwen2.5-7B优先, DS Flash兜底
 
     优先级:
@@ -59,7 +59,7 @@ def call_small_model(prompt: str, timeout_s: int = 15) -> str | None:
     return _call_dsflash(prompt, timeout_s)
 
 
-def _call_siliconflow(prompt: str, timeout_s: int = 15) -> str | None:
+def _call_siliconflow(prompt: str, timeout_s: int = 30) -> str | None:
     """硅基流动 OpenAI 兼容 API — Qwen2.5-7B-Instruct (免费)"""
     try:
         import urllib.request, os
@@ -106,12 +106,12 @@ def _call_dsflash(prompt: str, timeout_s: int = 60) -> str | None:
     try:
         sys.path.insert(0, str(ROOT / "scripts" / "wheels"))
         from api_pipeline import call
-        result = call("opencode", "mimo-v2.5",
+        result = call("opencode", "deepseek-v4-flash",  # @fix 2026-09-10: 换自 mimo-v2.5(实测 13.9s 失败→5.6s 成功)
             messages=[
                 {"role": "system", "content": JUDGE_SYSTEM},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=500, temperature=0.1, timeout_s=timeout_s, auto_route=False)  # 500: opencode flash 推理模型需留 content 空间
+            max_tokens=500, temperature=0.1, timeout_s=timeout_s, auto_route=False)  # 500: 推理模型需留 content 空间(thinking 已在 api_pipeline 集中关闭)
         if result and isinstance(result, dict):
             return result.get("text", "") or result.get("content", "") or ""
         return None

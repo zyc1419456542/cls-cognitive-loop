@@ -30,7 +30,7 @@ api_pipeline.py — 统一API调用管线（所有外部API调用的单一入口
     全部改走 api_pipeline.call(), 不再自己写socket/http。
 """
 
-import json, os, sys, time, urllib.request, urllib.error, inspect
+import json, os, sys, time, urllib.request, urllib.error, inspect, uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -345,7 +345,7 @@ def call_dual(
 ) -> dict | None:
     """双通道调用 — 先中转站(teio)再opencode，哪个能用用哪个。
 
-    maintainer定调 2026-08-08: teio 是中转站（不可信），opencode 是新 API（可信）。
+    张maintainer定调 2026-08-08: teio 是中转站（不可信），opencode 是新 API（可信）。
     先试 primary，失败自动 fallback 到 fallback，返回第一个成功结果。
     teio 配额耗尽后 → 从管线全面删除，本函数退化为单通道（只走 opencode）。
 
@@ -382,6 +382,8 @@ def call_dual(
 
 def _call_local_gpu(prompt: str, max_tokens: int, temperature: float, task_type: str, timeout_s: int) -> dict | None:
     """本地GPU推理 (Ollama HTTP API) — 用完即走，不占VRAM"""
+# ⚠️【本机】Ollama 地址 —— 与 _call_ollama_api 的 OLLAMA_REMOTE_URL(二号机 Tailscale) 是两条不同的路。
+#    本 provider(local_gpu) 走本机; provider="ollama" 走二号机。
     OLLAMA_URL = "http://localhost:11434"
     OLLAMA_MODEL = model if model else "qwen2.5:1.5b"  # 优先用传入model,兜底1.5B
 
@@ -562,7 +564,7 @@ def _call_deepseek_api(messages: list, model: str, max_tokens: int, timeout_s: i
 
 def _call_ollama_api(prompt: str, messages: list, model: str, max_tokens: int,
                      temperature: float, timeout_s: int) -> dict | None:
-    """Ollama 推理 → assistant二号 GPU (Tailscale)
+    """Ollama 推理 → assistant-node2 GPU (Tailscale)
 
     通过 HTTP POST 调用二号 Ollama 服务 (100.101.150.25:11434)，支持:
       - messages 格式 → /api/chat
@@ -570,8 +572,11 @@ def _call_ollama_api(prompt: str, messages: list, model: str, max_tokens: int,
     环境变量 OLLAMA_REMOTE_URL 可覆盖地址。
     """
     import urllib.request
-    model = model or "qwen3:32b"  # assistant二号主力 (20GB)
+    model = model or "qwen3:32b"  # assistant-node2主力 (20GB)
     base_url = os.environ.get("OLLAMA_REMOTE_URL", "http://100.101.150.25:11434")
+    # ⚠️ 这是【二号机 Tailscale】地址 —— 二号机不在线就连接超时。
+    #    本机 Ollama(跑着 ep 全系列) 请用 provider="local_gpu"(同文件 OLLAMA_URL) 或直连 127.0.0.1。
+    #    实测 2026-09-14: 本机 12 个模型可用, 但本 provider 默认走二号机 → 看起来像"Ollama 不可靠", 实为地址指错机器。
 
     try:
         if messages:
@@ -946,6 +951,25 @@ def _call_opencode_api(messages: list, model: str, max_tokens: int, timeout_s: i
         _op_keys = config.get("api_keys") or ([api_key] if api_key else [])
         _op_rotor = [0]
 
+        # ── x-opencode-session (2026-09-07 对齐 cls_api_fallback): zen/go 09/05 起缺头报错 ──
+        # 来源优先级: CC会话env → dsh会话env → cog_step窗口ID → 进程uuid
+        # @fix 2026-09-10: 原第②级只读 _meta.window_id, 而 cog_step.json 存在顶层 window_id 的
+        #   旧 schema(无 _meta) → 该级永远落空 → 每次调用都落到 uuid 兜底, 从而引爆 L961 的
+        #   NameError(uuid 当时只在嵌套函数内 import)。改为双 schema 双读 + 补 DSH_SESSION_ID。
+        _oc_session = (os.environ.get("CLAUDE_CODE_SESSION_ID")
+                       or os.environ.get("CLAUDE_SESSION_ID")
+                       or os.environ.get("DSH_SESSION_ID") or "")[:64] or None
+        if not _oc_session:
+            try:
+                _csp = ROOT / "data" / "state" / "cog_step.json"
+                _cs = json.loads(_csp.read_text(encoding="utf-8"))
+                _wid = (_cs.get("_meta") or {}).get("window_id") or _cs.get("window_id")
+                _oc_session = str(_wid)[:64] if _wid else None
+            except Exception:
+                _oc_session = None
+        if not _oc_session:
+            _oc_session = uuid.uuid4().hex
+
         def _next_op_key() -> str:
             if not _op_keys:
                 return ""
@@ -964,6 +988,8 @@ def _call_opencode_api(messages: list, model: str, max_tokens: int, timeout_s: i
 
         def _do_request(req_messages: list) -> dict:
             """执行一次实际请求,返回原始响应 dict"""
+            # @fix 2026-09-10: 原此处 `import uuid` 局部导入, 但 _oc_session 兜底在函数之外
+            #   (上方 provider 初始化段), 局部导入救不了它 → NameError。uuid 已提到模块顶层 L33。
             key = _next_op_key()
             if not key:
                 return {"_error": "opencode api_key 未配置"}
@@ -984,6 +1010,8 @@ def _call_opencode_api(messages: list, model: str, max_tokens: int, timeout_s: i
                     req.add_header("Authorization", f"Bearer {key}")
                 req.add_header("Content-Type", "application/json")
                 req.add_header("User-Agent", "ClaudeCode/1.0")
+                # x-opencode-session (2026-09-07): zen/go 缺头报 MissingSessionID — 对齐 cls_api_fallback
+                req.add_header("x-opencode-session", _oc_session)
                 with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                     return json.loads(resp.read().decode("utf-8"))
 
@@ -1019,8 +1047,12 @@ def _call_opencode_api(messages: list, model: str, max_tokens: int, timeout_s: i
                     "messages": req_messages,
                     "max_tokens": max_tokens,
                 }
-                # MiMo 推理模型: 禁用 thinking mode 防推理链吃光 token (2026-08-17)
-                if "mimo" in model.lower():
+                # 推理型模型: 禁用 thinking mode 防推理链吃光 token (2026-08-17 MiMo / 2026-09-10 扩至 deepseek)
+                # @fix 2026-09-10: 9 处调用点换用 deepseek-v4-flash 后实测 —— 不关 thinking 时
+                #   always_injector(max_tokens=1200) 的 completion_tokens 恰为 1200, JSON 尾部断在
+                #   对象中间(解析必失败); 关掉后同一 payload 输出 254 字合法 JSON。
+                #   extra_body 紧随其后 update, 故确需 thinking 的调用方可显式覆盖。
+                if "mimo" in model.lower() or lower_model.startswith("deepseek"):
                     payload["thinking"] = {"type": "disabled"}
                 if extra_body:
                     payload.update(extra_body)  # 2026-08-19 二号交付: thinking disabled 等透传
@@ -1143,6 +1175,9 @@ def _call_ollama_reasoning(prompt: str, model: str = "deepseek-r1:8b", timeout_s
 
     model = model or "deepseek-r1:8b"
     base_url = os.environ.get("OLLAMA_REMOTE_URL", "http://100.101.150.25:11434")
+    # ⚠️ 这是【二号机 Tailscale】地址 —— 二号机不在线就连接超时。
+    #    本机 Ollama(跑着 ep 全系列) 请用 provider="local_gpu"(同文件 OLLAMA_URL) 或直连 127.0.0.1。
+    #    实测 2026-09-14: 本机 12 个模型可用, 但本 provider 默认走二号机 → 看起来像"Ollama 不可靠", 实为地址指错机器。
 
     try:
         url = f"{base_url}/api/generate"

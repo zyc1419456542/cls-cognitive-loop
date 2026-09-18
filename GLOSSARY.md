@@ -7,11 +7,11 @@ internal vocabulary you'll see in annotation timestamps; this table maps them.
 |--------------------|-----------|---------|
 | `incident-log` | 暴毙录 ("sudden-death log") | append-only incident register; every ≥5-min debugging failure gets an entry via `baobi_recorder.py` |
 | `baobi` | pinyin of 暴毙 | kept in file identifiers (renaming would break import chains); content uses "incident" |
-| `deliveries/` | 许墨交付/ | output directory for every task deliverable |
+| `deliveries/` | delivery directory (Chinese) | output directory for every task deliverable |
 | `knowledge/` | 知识库/ | knowledge base (KG cards, conclusion library, iteration records) |
 | `persona/` | 灵魂/ | persona definition directory — never enters the cognitive loop, never in git |
-| `maintainer` | 翼辰 / 张翼辰 | the human operator |
-| `assistant` | 许墨 | the assistant persona name |
+| `maintainer` | personal handle of the author | the human operator |
+| `assistant` | persona name (Chinese) | the assistant persona name |
 | `dual-track` | 双轨 | one write lands twice: human-readable narrative + machine-parsable YAML frontmatter |
 | `consult` | 会诊 | tier-3 external-model review on the difficulty ladder |
 | `stance / gear` | 档位 | farming/skirmish/teamfight/retreat operational modes |

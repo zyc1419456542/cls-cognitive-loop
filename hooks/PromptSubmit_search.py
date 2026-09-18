@@ -94,7 +94,7 @@ _SEARCH_EXCLUDE = [
     # 项目内部引用（自己写的代码/knowledge）
     r'(?:我的|我们的|本项目|在 CLS 中|我[的们]项目|project\s+(?:root|dir))',
     r'(?:scripts/(?:wheels/)?\w+|CLAUDE\.md|\.mcp\.json|settings\.json)',
-    r'(?:assistant|maintainer|maintainer)',
+    r'(?:assistant|张maintainer|maintainer)',
 
     # 纯代码/技术问题（不需要外部知识的）
     r'(?:帮我[写改修]|请[写改修]|implement\s+(?:a\s+)?function)',

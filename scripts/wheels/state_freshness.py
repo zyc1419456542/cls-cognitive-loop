@@ -15,7 +15,7 @@ CHECKS = [
     ("state/active_context.json", 86400,  "active_context(1)", "cog-context --action read"),
     ("state/session_memory.md",   86400,  "session_memory(5)", "write session summary"),
     ("data/state/cog_step.json",  600,    "cog_step(2)", "cog-step-declare"),
-    ("state/trajectory.json",     43200,  "trajectory(6)", "cog-trajectory or /save"),
+    # @fix 2026-09-01: 删除 trajectory TTL — 累积追加日志不需要 TTL
 ]
 
 def check():

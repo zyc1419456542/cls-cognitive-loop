@@ -255,7 +255,7 @@ def _random_inject(s: dict, tool_name: str, tool_input: str = "") -> str | None:
 # ── 领域检测 ──────────────────────────────────
 
 DOMAIN_PATTERNS = [
-    (r"等离子|推力器|<部件A>|<部件B>|<sensor>|<传感器>|EEPF|PIC|仿真|电推", "ep"),
+    (r"等离子|推力器|阴极|阳极|Langmuir|探针|EEPF|PIC|仿真|电推", "ep"),
     (r"cad|build123d|STEP|装配|约束图|FreeCAD|零件|建模", "cad"),
     (r"回测|因子|策略|止损|仓位|K线|CPCV|量化|quant|trading", "quant"),
     (r"认知循环|cognitive|cls_brain|hook|闸门|brain|trajectory|symbol", "cls"),

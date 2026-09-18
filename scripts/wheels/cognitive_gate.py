@@ -84,7 +84,7 @@ COMPLEX_PATTERNS = [
     r"(调试|debug|fix|修复|排查).{0,10}(bug|错误|问题|崩溃)",
     r"(分析|诊断|评估|审查|review|audit).{0,10}(代码|系统|架构|设计)",
     r"(设计|建模|规划|架构).{0,15}(方案|系统|管线|流程)",
-    r"(PIC|CAD|<介质>|推力器|仿真|数值|有限元)",
+    r"(PIC|CAD|等离子体|推力器|仿真|数值|有限元)",
     r"(迁移|升级|重构|重写|翻新)",
     r"(自治|自主|自动|循环|loop|cron|scheduler)",
     r"(知识|记忆|cognitive|CLS|认知).{0,10}(图谱|循环|体系|建设)",
@@ -339,7 +339,7 @@ def gate(prompt_text: str, tier: str = "L4") -> dict:
     injection = None
 
     if should:
-        # ── 四字段注入(2026-08-16 maintainer批准): 消息|为什么|级别|内容 ──
+        # ── 四字段注入(2026-08-16 张maintainer批准): 消息|为什么|级别|内容 ──
         t = _get_quality_adjusted_thresholds(tier)
         status_items = []
         actions = []

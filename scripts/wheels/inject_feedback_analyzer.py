@@ -2,9 +2,9 @@
 """inject_feedback_analyzer.py — 注入质量反馈分析 + 自动调优 + 报告
 读取 execution 窗口的注入评分 (injection_feedback.jsonl) → 分布分析 → 自动调整
 (0/-1占比>40%冷却拉长2x, >60%自动关停, 漂移有用率低放宽cosine阈值) → 写回
-inject_feedback_config.json (semantic_inject 运行时读取生效) → 生成报告供maintainer审查。
+inject_feedback_config.json (semantic_inject 运行时读取生效) → 生成报告供张maintainer审查。
 
-@since: 2026-08-01 | maintainer决策: 自动调整+报告可回滚, 事后偶尔审查
+@since: 2026-08-01 | 张maintainer决策: 自动调整+报告可回滚, 事后偶尔审查
 """
 import json, os, sys, time
 from pathlib import Path
@@ -109,7 +109,7 @@ def save_config(adj: dict, prev_config: dict) -> Path:
     return CONFIG_FILE
 
 def generate_report(dist: dict, adj: dict, total: int) -> Path:
-    """生成报告供maintainer审查"""
+    """生成报告供张maintainer审查"""
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     date = time.strftime("%Y%m%d")
     report = REPORT_DIR / f"injection_quality_report_{date}.md"
@@ -138,7 +138,7 @@ def generate_report(dist: dict, adj: dict, total: int) -> Path:
         lines.append("- 无调整 (样本不足或均在阈值内)")
     lines += [
         "",
-        "## 待maintainer决策",
+        "## 待张maintainer决策",
         "",
         "- (如某类型连续差评, 考虑彻底移除其注入逻辑; 可回滚: 编辑 `data/state/inject_feedback_config.json`)",
         "",

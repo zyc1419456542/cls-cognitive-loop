@@ -1,4 +1,4 @@
-﻿$PROJECT_ROOT = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+﻿﻿$PROJECT_ROOT = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $PROJECT_ROOT) { $PROJECT_ROOT = $env:CLS_ROOT }
 # PreToolUse.ps1 -- active cognitive gate (fail-open)
 # Symbolic dynamics participates in real-time analysis
@@ -255,7 +255,7 @@ try {
     }
 
     # ── Bash失败循环检测 (2026-07-28; 2026-08-02 二号融合修: 诊断/探活豁免 + 同命令指纹判定 + 防死锁) ──
-    # @fix 2026-08-02 maintainer批准: 探索/诊断动作(echo/Get-Process/tasklist等)不违规, 本身是尝试。
+    # @fix 2026-08-02 张maintainer批准: 探索/诊断动作(echo/Get-Process/tasklist等)不违规, 本身是尝试。
     # 现改为: 仅"同命令指纹原样重试≥5"判失败循环; 诊断/探活/python/cd 豁免。
     if ($toolName -eq 'Bash') {
         try {
@@ -603,7 +603,7 @@ try {
         $hasMathEnv = $cgContent -match '\\\\begin\{(?:align|equation|gather|multline|split|aligned|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array|math)\*?\}' -or $cgContent -match $mathDisplayPattern -or $cgContent -match '(?<!\$)\$\$(?!\$)'
         if ($hasMathEnv -or $isTexFile) {
             $cgDomain2 = "math"
-            if ($cgFile -match '\\b(?:physics?|物理|<DOMAIN>|等离子)') { $cgDomain2 = "physics" }
+            if ($cgFile -match '\\b(?:physics?|物理|电推进|等离子)') { $cgDomain2 = "physics" }
             elseif ($cgFile -match '\\b(?:stat|prob|probab|统计|概率)') { $cgDomain2 = "stats" }
             elseif ($cgFile -match '\\b(?:cad|3d|model)') { $cgDomain2 = "cad" }
             try {
@@ -622,7 +622,7 @@ try {
 
         # === CHECK 6b [DOCX_BYPASS]: python-docx/pptx 文档生成 → DENY ===
         # 文档生成必须走 ppt-mcp 管线（mcp_servers/ppt_mcp.py），禁止手写 python-docx / python-pptx 生成。
-        # @fix 2026-08-02 二号融合 incident-log#34 maintainer决策: 区分读取/生成。纯 import(读已有文档内容分析)放行;
+        # @fix 2026-08-02 二号融合 incident-log#34 张maintainer决策: 区分读取/生成。纯 import(读已有文档内容分析)放行;
         #   仅含写出/构造 API(save/export/saveas/add_*) 才拦(生成本质=写出或修改文档)。
         # mcp_servers/ 和 scripts/wheels/ 放行（MCP服务器自身需要 import pptx）
         $targetFile = $toolInput.file_path
@@ -705,9 +705,9 @@ try {
         } catch {}
 
         # === CHECK 7 [VERSION_LOCK]: Claude Code 版本更新拦截 => DENY ===
-        # @updated 2026-07-27: assistant二号已验证最新版安全, 解锁更新
+        # @updated 2026-07-27: assistant-node2已验证最新版安全, 解锁更新
         if ($cmd -match '\bnpm\s+(update|install|i)\s+.*@anthropic-ai/claude-code\b' -and $cmd -notmatch '@latest\b') {
-            _EmitDecision -Decision "deny" -CheckName "VERSION_LOCK" -Reason "[VERSION_LOCK] npm 安装必须用 @latest (assistant二号已验证)"
+            _EmitDecision -Decision "deny" -CheckName "VERSION_LOCK" -Reason "[VERSION_LOCK] npm 安装必须用 @latest (assistant-node2已验证)"
             _WritePreToolAudit "deny" "VERSION_LOCK" "npm安装拦截: $cmd"
         }
 
@@ -1091,10 +1091,10 @@ try {
     # ═══════════════════════════════════════════════════════════════
     # CHECK 15.5 [PATH_ADAPT]: 多机路径适配软提示（非阻塞，仅提醒）
     # ═══════════════════════════════════════════════════════════════
-    # 检测到不是一号路径(E:\<ORG_REDACTED>\...)且未写适配标记时，提醒路径替换
+    # 检测到不是一号路径(<ORG_DIR>\...)且未写适配标记时，提醒路径替换
     if ($toolName -eq 'Write' -or $toolName -eq 'Edit') {
         $projectPath = $PWD
-        $no1Pattern = "<ORG_REDACTED>"
+        $no1Pattern = "<ORG>"
         $adaptFlag = Join-Path $PWD "data\state\sync_adapted.flag"
 
         if ($projectPath -notmatch $no1Pattern -and -not (Test-Path $adaptFlag)) {
@@ -1271,6 +1271,47 @@ try {
     # All clear -- default allow
     # @fix 2026-08-10 二号融合: content_gaze 改定期 sweep (不再每次 Write spawn, 省进程+防死链)
     # @fix 2026-08-16 一号融合: unified_monitor --fast 已挪至 PostToolUse.ps1, 此处去重删除
+
+    # ── 知识卡 pending 交付 (2026-09-05 maintainer方案A: 声明即检索请求) ──
+    # unified_inject 异步选完卡写 card_pending.json; 此处交付进上下文。
+    # @redesign 2026-09-07 maintainer定: 拆掉 Write/Edit 工具门 — PreToolUse 挂全工具(matcher空),
+    #   AI 下一个任意动作(bash/Read/Grep...)即交付, 延迟从分钟级(等写文件)降到动作级(1-5s)。
+    # @fix 2026-09-05 跨窗口串卡(暴毙点家族): pending带target_sid, 只许正主窗口消费;
+    #   他窗口不消费不删除(留着等正主), 错配>1h由过期逻辑清理。
+    if ($true) {
+        try {
+            $pendingF = "$PROJECT_ROOT\data\state\card_pending.json"
+            if (Test-Path $pendingF) {
+                $pd = Get-Content $pendingF -Raw -Encoding UTF8 | ConvertFrom-Json
+                # @fix 2026-09-10 跨运行时 sid 协议: 逻辑抽到 hooks/lib/session_key.ps1(可被测试
+                #   直接点源, 保证"测的就是跑的那份"), 与 scripts/wheels/session_identity.py 同语义。
+                $__skLib = Join-Path $PSScriptRoot 'lib\session_key.ps1'
+                if (-not (Get-Command Get-SessionKey -ErrorAction SilentlyContinue)) {
+                    if (Test-Path $__skLib) { . $__skLib }
+                }
+                if (Get-Command Get-SessionKey -ErrorAction SilentlyContinue) {
+                    $mySid = Get-SessionKey
+                    $tgtSid = "$($pd.target_sid)"
+                    $sidMatch = Test-SessionKeyMatch -Target $tgtSid -Mine $mySid
+                } else {
+                    # lib 缺失降级: 沿用旧 CC-only 口径(空=宽容), 保证不误判
+                    $mySid = "$env:CLAUDE_CODE_SESSION_ID"
+                    $tgtSid = "$($pd.target_sid)"
+                    $sidMatch = ($tgtSid -eq "" -or $tgtSid -eq $mySid)
+                }
+                $pAge = ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) - [DateTimeOffset]::Parse($pd.ts).ToUnixTimeSeconds()
+                if (-not $sidMatch -and $pAge -lt 3600) {
+                    _SilentLog "CARD_SKIP" "pending属窗口$tgtSid, 当前$mySid不消费 (age=${pAge}s)"
+                } elseif ($pAge -ge 0 -and $pAge -lt 3600) {
+                    Remove-Item $pendingF -Force -ErrorAction SilentlyContinue
+                    _SilentLog "CARD_DELIVER" "pending知识卡交付(窗口$mySid): anchor=$($pd.anchor) age=${pAge}s"
+                    $allowOut = @{hookSpecificOutput=@{hookEventName="PreToolUse";permissionDecision="allow";permissionDecisionReason="OK";additionalContext="[知识卡交付] `n$($pd.text)"}} | ConvertTo-Json -Compress
+                    [Console]::Out.WriteLine($allowOut)
+                    exit 0
+                } else { Remove-Item $pendingF -Force -ErrorAction SilentlyContinue }  # 过期丢弃(含错配超时)
+            }
+        } catch { Remove-Item "$PROJECT_ROOT\data\state\card_pending.json" -Force -ErrorAction SilentlyContinue }
+    }
 
 	    $allowOut = @{hookSpecificOutput=@{hookEventName="PreToolUse";permissionDecision="allow";permissionDecisionReason="No checks triggered"}} | ConvertTo-Json -Compress
 	    [Console]::Out.WriteLine($allowOut)

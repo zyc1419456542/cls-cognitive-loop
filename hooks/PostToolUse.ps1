@@ -1,4 +1,4 @@
-﻿# PostToolUse.ps1 — 符号动力学信任闸门  |  v1.0
+﻿﻿# PostToolUse.ps1 — 符号动力学信任闸门  |  v1.0
 # ===============================================
 # 每次 Write/Edit 后对 .md 交付文件执行多维门限检查。
 # 失败时写入告警日志但不阻塞操作 (fail-open 设计)。
@@ -260,12 +260,17 @@ $judgeScript = "$PROJECT_ROOT\scripts\wheels\symbolic_judge.py"
 # ── 2c. 面向过程注入 (2026-08-14 三层记忆架构 L3 新实现, 二号机融合) ──
 # 每次工具调用后分析 → 匹配 CC MEMORY.md 索引 → 定向注入(记忆候选/强制回顾/修复循环告警)。
 # tool_input 走临时 JSON 文件(stdin 管道给 pythonw 不可靠); temp/ 目录定期清理。
+# @backport 2026-09-14 二号三热修回流(incident-log#84族): ①接住 stdout 转发(原丢弃, 注入
+#   信封漏到控制台从未上屏) ②pythonw→python.exe(PS5.1 捕获不了 GUI 子系统 stdout,
+#   继承 _run_hidden 的 CREATE_NO_WINDOW 祖先链不闪窗) ③一号原始位置已天然在闸门前, 无需搬移。
+# process_inject 只在有注入时输出单个 hookSpecificOutput JSON, 无注入零输出 — 与主信封无冲突。
 try {
     $piScript = "$PROJECT_ROOT\scripts\wheels\process_inject.py"
     if (Test-Path $piScript) {
         $piTmp = "$PROJECT_ROOT\temp\pi_input_$PID.json"
         ($toolInput | ConvertTo-Json -Depth 8 -Compress) | Out-File -FilePath $piTmp -Encoding UTF8
-        & pythonw $piScript $toolName $piTmp 2>$null
+        $piOut = & python $piScript $toolName $piTmp 2>$null
+        if ($piOut) { Write-Output ($piOut -join "`n") }
     }
 } catch {}
 
@@ -609,7 +614,7 @@ if ($verdict -eq "fail") {
 }
 
 # ── CLS content_gaze 内容凝视 (定期化) ──
-# @fix 2026-08-10 二号融合 + 2026-08-02 maintainer决策: 改定期脚本自动整理, 不再每次 Write spawn。
+# @fix 2026-08-10 二号融合 + 2026-08-02 张maintainer决策: 改定期脚本自动整理, 不再每次 Write spawn。
 # 原因: ①每次 Write spawn python 进程=空转+弹窗(GAZE_TTL 600s 过期后永不激活, 死链)
 #      ②自动激活依赖 ops_freq 最后30行, 写密集时 Write 被挤出窗口 → 永不激活。
 # 现由定期脚本 `content_gaze.py --sweep` 主动扫描最近修改文件评估(见 data/state/ 对应任务)。

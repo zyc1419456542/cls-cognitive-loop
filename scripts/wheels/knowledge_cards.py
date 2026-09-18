@@ -18,7 +18,8 @@ from knowledge_nav_core import (ROOT, CARDS_FILE, SOURCES, SYSTEM, file_hash,
                                 load_cards, save_cards, scan_files, compress_batch,
                                 precompute_embeddings)
 
-MODEL = "mimo-v2.5"  # 2026-08-17: MiMo thinking=disabled, 免费
+MODEL = "deepseek-v4-flash"  # @fix 2026-09-10: 换自 mimo-v2.5。实测真实卡生成 payload(1792字)
+                             #   mimo+Go 0/2 失败(24.0s 空文本), DS Flash+Zen 成功 6.9s 出 1377 字
 PROVIDER = "opencode"  # 走 api_pipeline 统一入口 (key=keys/opencode_config.json 三key轮换)
 
 

@@ -527,7 +527,7 @@ def main():
             print(alert)
     elif cmd == "clear":
         clear()
-        print("已清理")
+        # @fix 2026-09-04: 裸stdout进模型上下文成噪声(maintainer窗口实测"已清理"×4), 静默
     else:
         print(f"未知命令: {cmd}")
 

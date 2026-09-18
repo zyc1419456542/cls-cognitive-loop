@@ -156,7 +156,7 @@ _ACTION_TO_SYMBOL = {
 _DOMAIN_TO_ENGINE = {
     "CAD": "cad",
     "QUANT": "quant",
-    "PIC": "pic",      # PIC<介质>仿真→物理质量检查域
+    "PIC": "pic",      # PIC等离子体仿真→物理质量检查域
     "CODE": "dialogue",  # 代码对话走对话域
     "MATH": "dialogue",  # 数学对话走对话域
     "SYSTEM": "dialogue",  # 系统运维对话走对话域

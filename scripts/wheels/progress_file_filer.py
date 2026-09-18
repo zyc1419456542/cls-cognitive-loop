@@ -8,7 +8,13 @@
 
 用法:
   # 记录新进度
-  python progress_file_filer.py record --output "产出了什么" --completed "完成了什么" --next-step "下一步做什么" [--track ALL|A|B|C]
+  python progress_file_filer.py record \
+      --task-source "maintainer给临时.txt 15 项 CLAUDE.md 修复任务" \
+      --output "CLAUDE.md 修复 15 项全落地; 被动监控栈上线" \
+      --completed "①[transcript_fact_scan.py L107] 新轮子... 动机:... 改法:... 设计亮点:..." \
+      --next-step "①重启 CC 窗口使 MCP 生效" \
+      --extra "scripts/wheels/transcript_fact_scan.py L107-159 | .claude/hooks/PostToolUse.ps1 L427-439" \
+      --track ALL
 
   # 将已有文件归位到标准位置
   python progress_file_filer.py move <源文件路径> --type main|dual [--track A|B|C|ALL] [--date YYYYMMDD]
@@ -18,6 +24,23 @@
 
   # 查看当前状态
   python progress_file_filer.py status
+
+填写标准（陌生人接手原则）:
+  --task-source: 今天干什么来的？maintainer给的/自主发现的/临时.txt 批注？
+  --output:      一段话概括本日总产出, 含关键数值和文件路径。
+                 标准：陌生人看到这段话能知道今天做出了什么东西。
+  --completed:   编号列表，每项必须包含三段：
+                 ①动机（为什么改/问题怎么死的/根因）
+                 ②改法（怎么治理/逻辑链/代码结构/修复路径）
+                 标准：陌生人看到这些能接手后续工作。
+                 示例：
+                   ①[scripts/wheels/xxx.py L100] 修复空转检测
+                     动机：原代码 not msgs 提前 return 导致 stale 告警被短路
+                     改法：stale 提到 msgs 判断之前，只依赖 mtime
+  --next-step:   含具体文件路径+要验证的假设。
+                 标准：明天开工第一件事就知道干什么。
+  --extra:       数据锚定——列出本轮使用的所有原始数据路径+代码行号。
+                 标准：事后能回溯到具体文件和具体行。
 """
 
 import os, sys, re, datetime, argparse, shutil
@@ -85,7 +108,7 @@ def record(args):
     date_str = args.date or _date_now()
     ts = args.time or _ts_now()
 
-    # --- 主进度写入 ---
+    # --- 主进度写入（覆盖写，一天一段） ---
     main_path = os.path.join(MAIN_DIR, f"progress_{date_str}.md")
     _write_main_progress(main_path, args, date_str)
 
@@ -102,28 +125,36 @@ def record(args):
 
 
 def _write_main_progress(path, args, date_str):
-    """写入主进度文件（追加模式）。"""
+    """写入主进度文件（覆盖写，一天一段）。
+
+    @since 2026-09-01 改为覆盖写 + 强制动机/改法/设计亮点三段式：
+          每个完成项必须包含"为什么改+怎么改+设计亮点"，
+          标准：陌生人看到日志就能接手工作。
+    """
     output = args.output or "(未填)"
     completed = args.completed or "(未填)"
     next_step = args.next_step or "(未填)"
+    task_source = args.task_source or "(未填)"
+    extra = args.extra or "(未填)"
 
     lines = [f"# 进度记录 - {date_str}\n\n"]
-    if args.extra:
-        lines.append(f"> {args.extra}\n\n")
+
+    # 任务来源（必填）
+    lines.append(f"## 0. 任务来源\n\n{task_source}\n\n")
+
+    # 数据锚定（必填）
+    lines.append(f"> 锚定: {extra}\n\n")
+
+    # 产出
     lines.append(f"## 产出\n\n{output}\n\n")
+
+    # 完成（提示词要求每项含动机+改法+设计亮点）
     lines.append(f"## 完成\n\n{completed}\n\n")
+
+    # 下一步
     lines.append(f"## 下一步\n\n{next_step}\n\n")
 
-    # 检查是否存在同日期文件：追加 or 覆盖？
-    # 策略：如果同日期已存在，追加新 section
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            existing = f.read()
-        # 追加到末尾
-        content = existing.rstrip() + "\n\n---\n\n" + "".join(lines)
-    else:
-        content = "".join(lines)
-
+    content = "".join(lines)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
@@ -310,7 +341,15 @@ def status(args):
         print(f"    不存在")
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """构建 CLI 解析器 (@add 2026-09-10)。
+
+    独立成函数是为了让 MCP 包装器(mcp_cls_tools.progress_record)能复用同一份字段定义取默认值。
+    原包装器手写 argparse.Namespace、靠人工与 filer 对齐字段, 已两次因漏字段而崩:
+      'title'      2026-08-27 → 补 title
+      'task_source' 2026-09-10 → 本次
+    字段定义收敛到单一来源后, 该类"漏字段"漂移不再可能复发。
+    """
     parser = argparse.ArgumentParser(
         description="进度文件归类器 / 进度记录器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -320,21 +359,45 @@ def main():
 
     # --- record ---
     rec = sub.add_parser("record", help="记录新进度到标准位置")
-    rec.add_argument("--output", "-o", default="", help="本阶段产出")
-    rec.add_argument("--title", default="", help="双轨文件名内容简介(缺省从output提取前30字)")
-    rec.add_argument("--completed", "-c", default="", help="完成的事项")
-    rec.add_argument("--next-step", "-n", default="", help="下一步计划")
+    rec.add_argument("--output", "-o", default="",
+                     help="本阶段产出（必填）：一段话概括，含关键数值和文件路径。"
+                          "标准：陌生人看到这段话能知道今天做出了什么东西。")
+    rec.add_argument("--title", default="",
+                     help="双轨文件名内容简介(缺省从output提取前30字)")
+    rec.add_argument("--completed", "-c", default="",
+                     help="完成的事项（必填）：编号列表，每项必须包含："
+                          "①动机（为什么改/问题怎么死的）"
+                          "②改法（怎么治理/逻辑链/代码结构）"
+                          "③设计亮点（好处/验证/实测数值）"
+                          "标准：陌生人看到这些能接手后续工作。"
+                          "示例："
+                          "  ①[scripts/wheels/xxx.py L100] 修复空转检测"
+                          "    动机：原代码 not msgs 提前 return 导致 stale 告警被短路"
+                          "    改法：stale 提到 msgs 判断之前，只依赖 mtime")
+    rec.add_argument("--next-step", "-n", default="",
+                     help="下一步计划（必填）：含具体文件路径+要验证的假设。"
+                          "标准：明天开工第一件事就知道干什么。")
+    rec.add_argument("--task-source", default="",
+                     help="任务来源（必填）：今天干什么来的？maintainer给的/自主发现的/临时.txt 批注？")
+    rec.add_argument("--extra", "-e", default="",
+                     help="数据锚定（必填）：列出本轮使用的所有原始数据路径+代码行号。"
+                          "标准：事后能回溯到具体文件和具体行。")
     rec.add_argument("--track", "-t", default="ALL", choices=["ALL", "A", "B", "C"],
                      help="轨道（ALL/A/B/C）")
     rec.add_argument("--date", default="", help="日期 YYYYMMDD（默认今天）")
     rec.add_argument("--time", default="", help="时间 HHMM（默认当前）")
-    rec.add_argument("--extra", "-e", default="", help="额外备注")
-    rec.add_argument("--lesson", default="", help="教训(踩坑+根因, 结构化知识段)")
-    rec.add_argument("--highlight", default="", help="亮点(做得好的方法/巧解)")
-    rec.add_argument("--difficulty", default="", help="克服的困难(硬闸验证过的难题, anchor=hard_gate)")
-    rec.add_argument("--conclusion", default="", help="结论(本轮确立的知识性结论)")
-    rec.add_argument("--decision", default="", help="决策(maintainer定调+理由, anchor=human_confirmed)")
-    rec.add_argument("--source", default="", help="引用来源(论文/URL/文件路径, 逗号分隔)")
+    rec.add_argument("--lesson", default="",
+                     help="教训(踩坑+根因, 结构化知识段)")
+    rec.add_argument("--highlight", default="",
+                     help="亮点(做得好的方法/巧解)")
+    rec.add_argument("--difficulty", default="",
+                     help="克服的困难(硬闸验证过的难题, anchor=hard_gate)")
+    rec.add_argument("--conclusion", default="",
+                     help="结论(本轮确立的知识性结论)")
+    rec.add_argument("--decision", default="",
+                     help="决策(maintainer定调+理由, anchor=human_confirmed)")
+    rec.add_argument("--source", default="",
+                     help="引用来源(论文/URL/文件路径, 逗号分隔)")
 
     # --- move ---
     mv = sub.add_parser("move", help="将已有文件归位到标准位置")
@@ -353,8 +416,11 @@ def main():
 
     # --- status ---
     sub.add_parser("status", help="查看状态")
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    args = build_parser().parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)

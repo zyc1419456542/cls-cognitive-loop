@@ -167,6 +167,27 @@ def main():
             return
 
     summary = run_pipeline()
+    # @add 2026-09-15 maintainer批: **前置** —— 回填 beh/task_id 到 intent_stream（零模型, 见该脚本 docstring）。
+    #   为什么必须是前置, 不能省: beh/task_id 是**从工具调用推导**的（44 条声明 × 9199 条工具流水
+    #   按滑动窗口共现配对），不该让 AI 手填。AI 每写一条新声明, 这条声明就是"裸"的。
+    #   若直接物化, trajectory_materialize 只能给缺 task_id 的行**就地各起一条新线**
+    #   （见该函数 @fix 注释）→ 每条新声明都算独立任务 → **返工率虚低、线数虚高**。
+    #   完整重算（含新行参与共现）只能在这里做。
+    #   失败不阻断: 推导是派生视图, 坏了不该拖垮 KG; 报 error 字段供对账。
+    try:
+        from behavior_derive import derive as derive_beh
+        _bd = derive_beh(write=True)
+        summary["behavior_derive"] = _bd.get("error") or {"written": _bd.get("written")}
+    except Exception as e:
+        summary["behavior_derive"] = f"skipped: {type(e).__name__}: {e}"
+    # @add 2026-09-12 maintainer批: 顺带物化意图流 → state/trajectory.json（零模型，见该脚本 docstring）。
+    #   挂这里而不是新建计划任务: CLS_Consolidator 本就是每 30min 的知识整合，同频。
+    #   失败不阻断主流程 —— 物化是派生视图，坏了不该拖垮 KG。
+    try:
+        from trajectory_materialize import materialize
+        summary["trajectory_materialize"] = materialize()
+    except Exception as e:
+        summary["trajectory_materialize"] = f"skipped: {type(e).__name__}: {e}"
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 

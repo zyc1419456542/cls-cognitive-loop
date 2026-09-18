@@ -1,4 +1,4 @@
-﻿# Stop.ps1 — 会话停止自动收尾  |  v1.0
+﻿﻿# Stop.ps1 — 会话停止自动收尾  |  v1.0
 # ===============================================
 # CC会话停止时触发，自动保存状态/更新last_operation/推daemon。
 # fail-open: 从不阻止CC的stop操作。
@@ -153,8 +153,11 @@ try {
     $feFile = Join-Path $PROJECT_ROOT "data\state\freshness_escalation.json"
     if (Test-Path $feFile) {
         $fe = Get-Content $feFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($fe.stale -and @($fe.stale).Count -gt 0) {
-            $cdItems.Add("state过期:" + (@($fe.stale) -join "/"))
+        # @backport 2026-09-14 二号v2: cog_step 的 TTL 过期是自然行为(离开>5min必过期),
+        #   列进CD=慢性常驻项只刷屏不催行动(maintainer8-29反馈"不太准/每次都刷"), 剔除
+        $feStale = @($fe.stale | Where-Object { $_ -notmatch 'cog_step' })
+        if ($feStale.Count -gt 0) {
+            $cdItems.Add("state过期:" + ($feStale -join "/"))
         }
     }
 } catch { _CdDiag "freshness_escalation" "$_" }
@@ -164,17 +167,27 @@ try {
     if (Test-Path $kgFile) {
         $cutoff = (Get-Date).ToUniversalTime().AddDays(-7)
         $kgStaleCount = 0
+        $kgDisputedCount = 0
         foreach ($line in [System.IO.File]::ReadLines($kgFile, [System.Text.Encoding]::UTF8)) {
             if ([string]::IsNullOrWhiteSpace($line)) { continue }
             try {
                 $e = $line | ConvertFrom-Json
+                # @backport 2026-09-14 二号v2: disputed 分歧项不限7天直接亮牌(maintainer必看)
+                if ($e.verdict -eq "disputed") { $kgDisputedCount++; continue }
                 if ($e.anchor_level -ne "model_authored") { continue }
+                # @backport 2026-09-14 二号9-13定稿: unverifiable 是终态不是债 — 机检缺证据链
+                #   本身就是裁决结论, 无任何机制能消化它, 原实现数字只增不减
+                if ($e.verdict -in @("verified_multi_ai", "rejected", "verified", "human_confirmed", "unverifiable")) { continue }
+                # @fix 2026-09-07 已复核豁免(maintainer批准): 有 reviewed_at/review_note 的条目视为已复核
+                #   否则复核动作无法消除CD项(判定只看创建时间, 复核了照样计数) — 修前ma超期20条
+                if ($e.reviewed_at -or $e.review_note) { continue }
                 if (-not $e.ts) { continue }               # 无时间戳 → 跳过, 不当0误报超期
                 $ts = [DateTimeOffset]::Parse($e.ts)       # 解析异常 → catch 跳过该条
                 if ($ts.UtcDateTime -lt $cutoff) { $kgStaleCount++ }
             } catch { }                                    # 坏行/坏时间戳跳过, 不计数不当0
         }
         if ($kgStaleCount -gt 0) { $cdItems.Add("KG model_authored结论超7天未复核×$kgStaleCount") }
+        if ($kgDisputedCount -gt 0) { $cdItems.Add("KG多AI审核分歧待maintainer裁决×$kgDisputedCount") }  # @backport 二号v2
     }
 } catch { _CdDiag "kg_conclusions" "$_" }
 # 来源② 双轨进度: 正文标 @unverified 的未验证结论 (mtime倒序上限120个 — 学习进度目录已有近千文件,
@@ -228,8 +241,8 @@ try {
         $suppress = $true            # 首轮: 只建基线, 不注入(冷启动静默)
     } elseif ($listHash -ne $lastH) {
         $suppress = $false           # 清单变化 = 有新CD转好/新增 → 值得说一次
-    } elseif (($nowEp - $lastT) -ge 1800) {
-        $suppress = $false           # 同清单 30min 提醒一次
+    } elseif (($nowEp - $lastT) -ge 7200) {  # @backport 2026-09-14 二号v2: 30→120min(maintainer8-29反馈每次都刷)
+        $suppress = $false           # 同清单 120min 提醒一次
     }
     if ($suppress) { $cdMsg = "" }
     if ($listHash -ne $lastH -or (-not $suppress)) {
@@ -238,26 +251,29 @@ try {
     }
 } catch { }
 
-# ── 5. 注入问卷收卷 (2026-08-03 A+B; 2026-08-10 maintainer要求: AI 强制回应) ──
-# 扫描本轮回复中的 [注入回应:<id>:采纳|参考|忽略] 标记, 写 feedback jsonl。
-# 强制回应: 无新鲜注入也输出提醒, AI 必须明确回应问卷 (采纳/参考/忽略), 不再静默。
-try {
-    $fbScript = "$PROJECT_ROOT\scripts\wheels\injection_feedback.py"
-    if (Test-Path $fbScript) {
-        & $pythonExe $fbScript 2>$null | Out-Null
+# ── 5. 注入问卷收卷 (2026-09-01 改异步: 不阻塞 Stop 出口) ──
+$fbScript = "$PROJECT_ROOT\scripts\wheels\injection_feedback.py"
+if (Test-Path $fbScript) {
+    try { & $pythonExe $fbScript 2>$null | Out-Null } catch { }
+    $fbPendingFile = "$PROJECT_ROOT\data\stateb_pending.txt"
+    try {
         $promptOut = & $pythonExe $fbScript maybe_prompt 2>$null
-        # @fix 2026-08-15: 无新鲜注入时静默(脚本设计意图: "Stop hook 不应输出 noise" + 注入三原则例行不上屏)。
-        # 原 fallback 每次 Stop 强制提醒 → 模型无法在触发它的同一轮内回应 → Stop 死循环(隔壁窗口卡死事故)。
-        # "强制回应"保留: 有真新鲜注入时 maybe_prompt 仍输出必答问卷。
         $promptOut = ($promptOut | Out-String).Trim()
-        # 合并出口 (@added 2026-08-22 改动b): CD清点与问卷共用一个 additionalContext 信封 —
-        # CC hook stdout 出现两段独立 JSON 会整体解析失败, 必须单出口。
-        $combinedCtx = (@($promptOut, $cdMsg) | Where-Object { $_ -and $_.ToString().Trim() }) -join "`n"
-        if ($combinedCtx.Length -gt 0) {
-            $fbOut = @{hookSpecificOutput=@{hookEventName="Stop";additionalContext=$combinedCtx}} | ConvertTo-Json -Compress
-            Write-Output $fbOut
-        }
-    }
-} catch { }
+        if ($promptOut) { $promptOut | Set-Content -Path $fbPendingFile -Encoding UTF8 -ErrorAction SilentlyContinue }
+    } catch { }
+}
+$fbPendingFile = "$PROJECT_ROOT\data\stateb_pending.txt"
+$promptOut = ""
+if (Test-Path $fbPendingFile) {
+    try {
+        $promptOut = (Get-Content $fbPendingFile -Raw -Encoding UTF8).Trim()
+        Remove-Item $fbPendingFile -Force -ErrorAction SilentlyContinue
+    } catch { }
+}
+$combinedCtx = (@($promptOut, $cdMsg) | Where-Object { $_ -and $_.ToString().Trim() }) -join "`n"
+if ($combinedCtx.Length -gt 0) {
+    $fbOut = @{hookSpecificOutput=@{hookEventName="Stop";additionalContext=$combinedCtx}} | ConvertTo-Json -Compress
+    Write-Output $fbOut
+}
 
 exit 0

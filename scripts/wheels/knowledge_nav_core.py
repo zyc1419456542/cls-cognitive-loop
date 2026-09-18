@@ -36,7 +36,7 @@ SYSTEM = (
     "② 时间越靠后的记录越可信, 压缩时保留记录里的日期, 没有明确日期就从文件名推断(如 20260816_xxx → 2026-08-16)。\n"
     "③ 卡片必须短: 内容≤60字, 教训/亮点各≤30字, 没有就写\"无\"。\n"
     "④ 元数据提取(供后续智能检索): domain=领域标签(如ep/cad/cls/quant/teaching/orchestration/general); "
-    "entities=该卡片提及的关键实体名(如<DOMAIN设备>/知识卡片/opencode), 2-5个; "
+    "entities=该卡片提及的关键实体名(如霍尔推力器/知识卡片/opencode), 2-5个; "
     "task_type=任务类型(如分析/建模/重构/审计/实验/交付/学习/维护)。\n"
     "输出严格 JSON(每批一行一个对象, 别用数组包): "
     '{"file":"<文件名>","date":"<YYYY-MM-DD或空>","title":"<任务一句话>","content":"<2-3句>","lesson":"<教训>","highlight":"<亮点>",'

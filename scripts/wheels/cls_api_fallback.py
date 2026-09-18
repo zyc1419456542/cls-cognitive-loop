@@ -58,7 +58,7 @@ def chat(
     model: str = "Qwen/Qwen2.5-7B-Instruct",
     max_tokens: int = 150,
     temperature: float = 0.3,
-    timeout: int = 10,
+    timeout: int = 30,  # @fix 2026-09-05: 10→30s — SF免费档长prompt实测10-30s(auto_capture恒0同根因)
 ) -> str | None:
     """SF主 → DS Flash兜底。返回模型文本回复,失败返回None。
 
@@ -89,6 +89,25 @@ def chat(
     _oc_timeout = max(timeout, 45)
     oc = _load_opencode()
     _oc_keys = oc.get("api_keys") or ([oc.get("api_key", "")] if oc.get("api_key") else [])
+    # x-opencode-session (2026-09-05): zen会话粘性路由头, 09/05起缺头将error (deepseek-harness#5495)
+    # 来源优先级: CC会话env → cog_step窗口ID → 进程uuid; 独立实现, 保兜底通道不依赖api_pipeline
+    import os as _os
+    import uuid as _uuid
+    _oc_session = (_os.environ.get("CLAUDE_CODE_SESSION_ID")
+                   or _os.environ.get("CLAUDE_SESSION_ID")
+                   or _os.environ.get("DSH_SESSION_ID") or "")[:64] or None
+    if not _oc_session:
+        try:
+            _csp = Path(__file__).resolve().parents[2] / "data" / "state" / "cog_step.json"
+            _cs = json.loads(_csp.read_text(encoding="utf-8"))
+            # @fix 2026-09-10: cog_step.json 存在两种 schema — MCP 写 _meta.window_id,
+            #   旧版/磁盘遗留写顶层 window_id。只读 _meta 会让该级永远落空 → 每次走 uuid 兜底。
+            _wid = (_cs.get("_meta") or {}).get("window_id") or _cs.get("window_id")
+            _oc_session = str(_wid)[:64] if _wid else None
+        except Exception:
+            _oc_session = None
+    if not _oc_session:
+        _oc_session = _uuid.uuid4().hex
     for _oc_key in _oc_keys:
         if not _oc_key:
             continue
@@ -102,7 +121,8 @@ def chat(
             req = urllib.request.Request(
                 oc.get("base_url", "https://opencode.ai/zen/v1").rstrip("/") + "/chat/completions", data=body,
                 headers={"Authorization": f"Bearer {_oc_key}", "Content-Type": "application/json",
-                         "User-Agent": "ClaudeCode/1.0"},  # UA 必须: Cloudflare 指纹拦截→403
+                         "User-Agent": "ClaudeCode/1.0",  # UA 必须: Cloudflare 指纹拦截→403
+                         "x-opencode-session": _oc_session},
                 method="POST")
             with urllib.request.urlopen(req, timeout=_oc_timeout) as resp:
                 msg = json.loads(resp.read().decode())["choices"][0]["message"]

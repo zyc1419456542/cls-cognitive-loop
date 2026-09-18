@@ -38,7 +38,7 @@ TAIL_BYTES = 512 * 1024  # 只读尾部512KB, 大transcript不全量加载
 
 
 def project_slug(cwd: str) -> str:
-    """cwd → CC 项目slug: 每个非字母数字字符替换为一个'-' (实测 <REPO_ROOT> → E-------claude-api-claude)"""
+    """cwd → CC 项目slug: 每个非字母数字字符替换为一个'-' (实测 E:\\<ORG>\\claude_api\\claude → E-------claude-api-claude)"""
     return "".join(c if c.isascii() and c.isalnum() else "-" for c in cwd)
 
 

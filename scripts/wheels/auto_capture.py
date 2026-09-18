@@ -134,9 +134,15 @@ def passive_capture() -> int:
     以 <!--capture:TYPE anchor=LEVEL--> 标记写入, 此处只做解析入库。
     相比小模型从trajectory流水里猜知识, 这是确定性提取。
     """
-    dual_dir = ROOT / "assistant交付" / "📚 学习资料" / "学习进度"
+    # @fix 2026-09-12 maintainer批: 原只扫"双轨进度"一个目录 —— 而 learn_capture 的轨2
+    #   (knowledge/进度文件/知识捕获/) 是同一个概念("把知识写下来")的另一个落点, 不在其中。
+    #   实测: 知识捕获/ 14 文件 93KB, 进结论库仅 5 条(1.3%); 而知识卡片那条路走
+    #   knowledge_nav_core.SOURCES(含"knowledge/进度文件"父目录 + rglob 递归) → 13/14 覆盖。
+    #   两个落点消费者都必须认。配套: learn_capture 已在正文前打 <!--capture:lesson--> 标记。
+    dual_dirs = [ROOT / "assistant交付" / "📚 学习资料" / "学习进度",
+                 ROOT / "knowledge" / "进度文件" / "知识捕获"]
     concl_file = ROOT / "knowledge" / "知识图谱" / "kg_conclusions.jsonl"
-    if not dual_dir.exists():
+    if not any(d.exists() for d in dual_dirs):
         return 0
 
     # 已捕过的文件不再扫 (记录 mtime)
@@ -150,7 +156,7 @@ def passive_capture() -> int:
     marker_re = re.compile(
         r"<!--capture:(\w+)(?:\s+anchor=(\w+))?-->\n(.+?)(?=\n\n|\n##|\Z)", re.DOTALL)
     captured = 0
-    for md in sorted(dual_dir.glob("*.md")):
+    for md in [m for d in dual_dirs for m in sorted(d.glob("*.md"))]:
         key = md.name
         mtime = md.stat().st_mtime
         if seen.get(key) == mtime:
@@ -173,7 +179,7 @@ def passive_capture() -> int:
                 "type": ctype,
                 "anchor_level": anchor or "model_authored",
                 "fact": fact,
-                "source": f"assistant交付/📚 学习资料/学习进度/{md.name}",
+                "source": str(md.relative_to(ROOT)).replace("\\", "/"),
             }
             try:
                 concl_file.parent.mkdir(parents=True, exist_ok=True)
@@ -229,7 +235,7 @@ If nothing is genuine knowledge, return empty facts.
 
 DO NOT wrap in ```json``` code blocks. Output raw JSON only."""
 
-    raw = call_model(prompt)
+    raw = call_model(prompt, timeout_s=45)  # @fix 2026-09-05: 默认10s在免费档长prompt下必超时(实测30s才回), 主动提取captured恒0的真凶
     if not raw:
         return result
 

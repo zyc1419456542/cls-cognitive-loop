@@ -5,7 +5,7 @@ CLS Memory 单例模块 —— Mem0 封装 (fastembed + Ollama, 全本地).
     from cls_memory import cls_memory
 
     # 存 (认知循环 Step 6)
-    cls_memory.add("法拉第<传感器>壳体改为7mm通体螺栓", user_id="cls", agent_id="cad_agent")
+    cls_memory.add("法拉第探针壳体改为7mm通体螺栓", user_id="cls", agent_id="cad_agent")
 
     # 查 (认知循环 Step 1)
     results = cls_memory.search("壳体螺栓设计", user_id="cls", top_k=5)

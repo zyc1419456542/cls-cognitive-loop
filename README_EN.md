@@ -87,6 +87,28 @@ Standalone quick-start: `python scripts/core-engine/stance.py selftest` · `stuc
 
 ---
 
+## What's New in v3.2 (September 2026)
+
+Three weeks of production changes after the v3.1 code release.
+
+**Cognitive layering.** PostToolUse tags every tool-trajectory entry with a layer: reflex (reads, listings), rhythm (routine writes), strategy (new plans, architecture), human (operator messages). Derived from existing logs, 5.2 ms per call, no new monitor process. The layer distribution feeds per-layer data mixes for future fine-tuning.
+
+**Four stance gears.** Session-level operating mode: farming (routine), skirmish (stuck — forced strategy change), teamfight (multi-window coordination), retreat (diagnostics, advisory-only). Single write port with CAS atomic write and TTL back-to-farming.
+
+**Pre-engagement CD check.** Stop.ps1 inventories unresolved debt at session end: commits without decision records, 3+ repair rounds without an incident entry, deliveries that skipped the gate. One envelope, flag-only, under 2 seconds.
+
+**Declare-as-retrieval.** The cog-step-declare label now doubles as the retrieval key: declaration category/label directly hits knowledge cards (lexical match, 473 ms). The card arrives the moment the declaration completes — the two-stage "declare, then wait for injection" delay is gone.
+
+**Knowledge cards v2.1.** Pitfall cards pair the wrong way with the right way — contrast is the information. Highlight cards (correct-knowledge-only) live separately. Parser tolerates fenced, nested, and bare-newline formats.
+
+**Passive fact scanning.** transcript_fact_scan extracts four fact classes from session transcripts: idle, fix-loops, tool monotony, staleness. external_anchor cross-examines silent failures ("every tool returned success but nothing changed") against git history and process tables.
+
+**Error antidote table.** PostToolUseFailure ships 29 antidotes across 11 high-frequency error classes. Keyword lookup first, model fallback second.
+
+**dsh-side cls-inject v0.4.** Drift detection switched to pure reasoning via a locally fine-tuned model; cross-window card injection now requires identity plus freshness (declaration valid within 30 minutes) checks.
+
+---
+
 ## Local Fine-Tuned Small Models (data-flywheel payout)
 
 Three high-frequency tasks (strict-JSON summarization/classification, memory

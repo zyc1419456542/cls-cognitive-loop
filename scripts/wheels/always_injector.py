@@ -16,7 +16,7 @@ INJECT_FILE = ROOT / "data" / "state" / "always_inject.json"
 STATE_FILE = ROOT / "data" / "state" / "_always_injector_state.json"
 LOCAL_MODEL = "ep-json:latest"  # 本地微调 (2026-08-21 切换)
 PROVIDER = "opencode"  # 远端兜底
-DS_MODEL = "mimo-v2.5"
+DS_MODEL = "deepseek-v4-flash"  # @fix 2026-09-10: 换自 mimo-v2.5(实测 P0 提取 payload 上 mimo 28.7s vs DSF 7.0s)
 MAX_SECTIONS = 12
 
 

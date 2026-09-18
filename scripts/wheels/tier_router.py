@@ -8,7 +8,7 @@ tier_router.py — 六层推理路由闸门 v1
 六层:
   L0 — 本地嵌入 (一号CPU, 零成本)
   L1 — 网络免费API (零成本, 高频)
-  L2 — assistant二号GPU (零成本, 闲置GPU, ollama-agent-router)
+  L2 — assistant-node2GPU (零成本, 闲置GPU, ollama-agent-router)
   L3 — 豆包/阿里套餐 (已付费, 不用白不用)
   L4 — DeepSeek Flash (¥0.02/MTok, 缓存命中更便宜)
   L5 — DeepSeek Flash / Opus (pro 临时下架 2026-08-16 夜, 全换 flash, 未来降价请回)

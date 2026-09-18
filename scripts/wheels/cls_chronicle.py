@@ -9,7 +9,7 @@ cls_chronicle.py — CLS 编年史: 时间+核心内容谱系压缩
   增量更新: 每天8次(同knowledge_graph频率)→只扫描新增内容→合并
   输出: .cls_chronicle.json (≤2KB) → SessionStart注入
 
-与assistant二号知识图谱分工:
+与assistant-node2知识图谱分工:
   chronicle: 时间维 ("什么时候发生了什么")
   knowledge_graph: 概念维 ("什么概念之间存在什么关系")
   两者互补, SessionStart 一起注入
@@ -128,9 +128,9 @@ def call_dsflash(prompt: str, timeout_s: int = 60) -> str | None:
     try:
         sys.path.insert(0, str(ROOT / "scripts" / "wheels"))
         from api_pipeline import call
-        result = call("opencode", "mimo-v2.5",
+        result = call("opencode", "deepseek-v4-flash",  # @fix 2026-09-10: 换自 mimo-v2.5(实测 33.9s/503字 → 15.1s/1473字)
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=800, temperature=0.1, timeout_s=timeout_s, auto_route=False)  # 800: opencode flash 推理模型需留 content 空间
+            max_tokens=800, temperature=0.1, timeout_s=timeout_s, auto_route=False)  # 800: 推理模型需留 content 空间(thinking 已在 api_pipeline 集中关闭)
         if result and isinstance(result, dict):
             return result.get("text", "") or result.get("content", "")
     except Exception:

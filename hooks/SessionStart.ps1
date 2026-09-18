@@ -1,4 +1,4 @@
-﻿# =============================================================================
+﻿﻿# =============================================================================
 # CLS HARDENED SessionStart Hook — 会话启动初始化
 # =============================================================================
 # 0. 控制台编码（必须在最前面，否则后续中文全部乱码）
@@ -51,7 +51,11 @@ _diag "============================================================"
 try {
     $stateFile = "$PROJECT_ROOT\state\activation_state.json"
     if (Test-Path $stateFile) {
-        $state = Get-Content $stateFile -Raw | ConvertFrom-Json
+        # @fix 2026-09-12: 原缺 -Encoding UTF8 → PS 5.1 按 GBK 读 UTF-8 中文 → ConvertFrom-Json 炸
+        #   → catch 静默 → self_activate 分支 38/38 次从未走到过(实测 session_start_diag.log)。
+        #   同族: incident-log#23(控制台编码) / #68(Edit 写无 BOM UTF-8, PS 按 GBK 解析)。
+        #   修它不是为了让它跑起来(status=ALIVE 会走暖启动跳过), 而是让日志说真话。
+        $state = Get-Content $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($state.status -eq "DEAD") {
             _diag "[SessionStart] 冷启动 → self_activate"
             $sa_out = & pythonw scripts/self_activate.py 2>&1; if ($sa_out) { _diag ($sa_out -join "`n") }
@@ -675,12 +679,24 @@ try {
 # 21.9 unified_inject — 知识卡片导航 (@since 2026-07-31 二号融合; 2026-08-19 二号接线 iter-036)
 # ═══════════════════════════════════════════════════════════════════
 # 当前模式: 仅当本窗口锚点明确(第⓪级 prompt_history + 三级链)时注入, 无锚点静默(宁缺毋错)。
+# @fix 2026-09-04 双重死亡修复(maintainer实测"知识卡从未触发"): 本段在 async:true 钩子里,
+#   Write-Host/systemMessage 均无人接收(人看不到/模型收不到)。
+#   修复: $script:KnowledgeCardCtx 收集注入文本 → 脚本末尾(既有信封处)合并输出 additionalContext。
+#   配套: settings.json 该钩子需去 async:true (同步执行 stdout 才被 CC 读取)。
+$script:KnowledgeCardCtx = ""
 try {
     $uiScript = "$PROJECT_ROOT\scripts\wheels\unified_inject.py"
     if (Test-Path $uiScript) {
         $uiOut = & pythonw $uiScript 2>&1
         if ($uiOut) {
             Write-Host ($uiOut -join "`n")
+            # @fix 2026-09-04 第三重死亡: unified_inject stdout 混着 api_pipeline 彩色调试框
+            # (200+ ANSI码)与四字段文本 — 全量塞 additionalContext 会污染/破坏 JSON。
+            # 只提取【消息】起的四字段纯文本行。
+            $cleanLines = @($uiOut | Where-Object { $_ -match '^【(消息|为什么|级别|内容)】|^(── |关联分析|^- 《)' })
+            if ($cleanLines.Count -gt 0) {
+                $script:KnowledgeCardCtx = ($cleanLines -join "`n")
+            }
             _diag "[SessionStart] unified_inject: injected"
             # @since 2026-08-19: 注入卡片 CC 屏幕框图 (systemMessage 通道)
             $vizFile = "$PROJECT_ROOT\data\state\card_inject_viz.json"
@@ -745,12 +761,12 @@ try {
     if (Test-Path "$PROJECT_ROOT\data\state\injection_log.jsonl") { $injInfo = "$((Get-Content "$PROJECT_ROOT\data\state\injection_log.jsonl").Count)次" }
     $autoInfo = "关闭"
     if (Test-Path "$PROJECT_ROOT\data\state\autonomy_state.json") { $autoInfo = "激活" }
-    # 2026-08-16 四字段改造(maintainer批准): 消息|为什么|级别|内容 — 原"[会话恢复] KG: x | 注入: y"缩写, 一无所知的AI看不懂
+    # 2026-08-16 四字段改造(张maintainer批准): 消息|为什么|级别|内容 — 原"[会话恢复] KG: x | 注入: y"缩写, 一无所知的AI看不懂
     # (自指句读回在独立 hook scripts/wheels/selfref_cc_read.py, iter-026 外部化, 此处不重复)
     $ctxText = "【消息】会话恢复(CLS): 会话启动时对本窗口累积状态的自动摘要。"
     $ctxText += "【为什么】压缩/重启后你可能不记得上个会话做到哪, 以下是本窗口状态。"
     $ctxText += "【级别】参考 — 不强制行动, 只做背景。"
-    $ctxText += ("【内容】知识图谱: {0} | 本窗口累计注入: {1} | 无人值守: {2} | 建议: 复杂任务走认知循环6步" -f $kgInfo, $injInfo, $autoInfo)
+    $ctxText += ("【内容】知识图谱: {0} | 全仓累计注入: {1} | 无人值守: {2} | 建议: 复杂任务走认知循环6步" -f $kgInfo, $injInfo, $autoInfo)
     # ── 压缩恢复合并 (2026-08-14 读端, 2026-08-15 扩展 extra): PreCompact 写入的恢复信息在此注入后删除 ──
     $recoveryFile = "$PROJECT_ROOT\data\state\precompact_recovery.json"
     if (Test-Path $recoveryFile) {
@@ -791,6 +807,11 @@ try {
             }
         }
     } catch { _diag "[SessionStart] 拦截历史合并跳过: $_" }
+    # ── 知识卡片合并进 additionalContext (@fix 2026-09-04 双重死亡修复) ──
+    if ($script:KnowledgeCardCtx) {
+        $ctxText = $ctxText + "`n" + "【消息】知识卡片导航(CLS): 后台发现knowledge中有与当前任务相关的工作记录, 自动推送。【级别】参考 — 相关就纳入思考, 不相关可忽略, 无需回应。" + "`n" + $script:KnowledgeCardCtx
+        _diag "[SessionStart] 知识卡片并入additionalContext"
+    }
     Write-Output (@{ continue=$true; hookSpecificOutput=@{ hookEventName="SessionStart"; additionalContext=$ctxText } } | ConvertTo-Json -Compress)
 } catch {}
 

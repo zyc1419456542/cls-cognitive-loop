@@ -1,9 +1,23 @@
+try:
+    import session_identity as _SI
+except ImportError:  # 以包形式(scripts.wheels.xxx)导入时走全限定名
+    from scripts.wheels import session_identity as _SI
+
+
+def _sid_match(window_id: str, sid8: str) -> bool:
+    """窗口归属校验 —— 委托 session_identity 统一口径 (@fix 2026-09-10)。
+
+    原实现 `w.startswith(sid8) or w.startswith("cc:"+sid8)`: 漏 dsh: 前缀(声称支持
+    但代码没写) + 两边 "unknown" 时误判同一窗口。详见 session_identity 模块 docstring。
+    """
+    return _SI.matches(window_id, sid8)
+
 #!/usr/bin/env python3
 """unified_inject.py — 知识联想注入
 =====================================================
 SF Qwen 一次性调: 读 anchor + KG 候选实体 → 选最相关实体 → 附带真实内容+源文件
 
-@fix 2026-08-16 maintainer定格式: 知识联想必须带 "知识内容是XXX 文件名XXX",
+@fix 2026-08-16 张maintainer定格式: 知识联想必须带 "知识内容是XXX 文件名XXX",
     原"跨界灵感/本地记忆/知识实体"纯标签版"有点水" — 一无所知的AI看不懂要干嘛。
     实现: SF 只做选择(从候选实体名挑一个), 内容与文件名由本地 KG 确定性取出, 不靠模型生成。
 
@@ -22,8 +36,24 @@ if _WHEELS not in sys.path:
 from knowledge_nav_core import load_cards, prescreen, format_nav_cards, bigrams
 from knowledge_inject_audit import log as _audit_ki  # P7 统一审计
 
-CONCLUSIONS_FILE = Path(_WHEELS).parent.parent / "knowledge" / "知识图谱" / "kg_conclusions.jsonl"
 
+def _session_id() -> str:
+    """本会话 ID 的单一来源 (@add 2026-09-10)。
+
+    🔴 原实现(2026-09-10 上午)只读 CC 会话 env 并**故意**不加 DSH 兜底, 理由是
+    "DSH_SESSION_ID[:8] 恒为 'session-'(非区分性), 写入 target_sid 会让消费端从
+    空=宽容 变成 不等=跳过"。该判断只对未剥前缀的裸 [:8] 切片成立 —— 现已证伪:
+
+      dsh-to-cc 插件 ccUuidFor() (index.js L31-36): CC 会话 id 就是剥掉 'session-'
+      的 DSH uuid。故剥掉前缀后取 [:8] 与消费端 $env:CLAUDE_CODE_SESSION_ID[:8] **同值**,
+      可安全用于跨运行时交接, 且比空串更能起到窗口隔离作用(空串=任何窗口都能消费)。
+
+    现统一委托 session_identity(见该模块 docstring), 由它保证剥前缀与同核判定。
+    """
+    return _SI.current_window_id()
+
+
+CONCLUSIONS_FILE = Path(_WHEELS).parent.parent / "knowledge" / "知识图谱" / "kg_conclusions.jsonl"
 
 def _match_conclusions(anchor: str, top_n: int = 3, min_shared: int = 3) -> str:
     """结论库匹配 (2026-08-20): incident-log教训/双轨结构化结论按 CJK bigram 命中锚点。
@@ -93,10 +123,28 @@ def _parse_pick_json(response: str) -> dict | None:
     return d if d["pick"] else None
 
 
+# ── 用户消息三分判定 (2026-09-01 maintainer定调: 规则版先行, ep-json三分类训好后切换) ──
+_ACK_RE = re.compile(r"^(ojbk|ok|okay|ojb|好|好的|嗯|嗯嗯|行|行吧|继续|可以|没问题|对的|是|没错|收到|顶|哈哈+|66+|牛|不错|去吧|开工|睡觉|晚安|先这样|就这样)[了啊吧呀呢!.？?~\s]*$")
+_ACTION_RE = re.compile(r"[写修改加删跑测查整理分析找读记存打开调重构训练部署推同合测做编译画聊讨论设计看搜]|帮我|给我|你来|需要|应该|是不是|为什么|怎么")
+
+def _classify_user_msg(m: str) -> str:
+    """实质指令 instr / 审查反馈 review / 口水话 chat。
+    - chat: 纯确认/情绪/极短碎片
+    - review: 对上一步产出的评价或纠正指令以外的话(不含可执行对象) — 跳过但继续回溯
+    - instr: 含动作动词或请求标记 且 非纯确认
+    """
+    m = (m or "").strip()
+    if not m or len(m) < 4 or _ACK_RE.match(m):
+        return "chat"
+    if _ACTION_RE.search(m):
+        return "instr"
+    return "review"
+
+
 def inject() -> str:
     """主入口: 返回四字段注入 (消息|为什么|级别|内容), 内容带真实知识+文件名"""
     # 注入质量反馈 config — 统一 类型 off → 关停本注入 (analyzer 自动调整)
-    # @fix 2026-08-01: maintainer决策"语义分析类注入全部都这样" → 知识导航(统一)可被反馈环关停
+    # @fix 2026-08-01: 张maintainer决策"语义分析类注入全部都这样" → 知识导航(统一)可被反馈环关停
     try:
         _cfg = ROOT / "data" / "state" / "inject_feedback_config.json"
         if _cfg.exists():
@@ -116,7 +164,7 @@ def inject() -> str:
     # (PreCompact 现写 "sid:<8位>" 前缀, 他窗口的 goal 不算)。
     _MAX_AGE = 24 * 3600
     anchor = ""
-    _sid8 = (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or "unknown")[:8]
+    _sid8 = (_session_id() or "unknown")[:8]
 
     def _fresh_mtime(p: Path) -> float | None:
         try:
@@ -124,18 +172,19 @@ def inject() -> str:
         except Exception:
             return None
 
-    # ⓪ 本 session 最近用户消息 (2026-08-19 maintainer定: anchor 信息源以"你正在做的事"为真相。
-    # semantic_inject 每 session 独立记录 prompt_history_{sid}.json 最近10条用户消息 —
-    # session_id 同源取自 CLAUDE_CODE_SESSION_ID, 与本文件 _sid8 一致, 不会串窗口。
-    # 取最近一条非空消息前80字做锚点, 比状态文件更接近"现在在干什么"。)
+    # ⓪ 本 session 用户消息 — @redesign 2026-09-01 maintainer定调:
+    # 原话仍可做锚点, 但必须先过"实质指令/审查反馈/口水话"三分判定(规则版, ep-json三分类训好后切换):
+    #   口水话(纯确认/情绪/短碎片)与审查反馈(对上一步的评价)跳过, 向前回溯找最近的实质指令
+    #   —— 有意义的指令可能存在在很久之前, 后面都是审查话; 全无实质指令则不设⓪锚点。
+    # semantic_inject 每 session 独立记录 prompt_history_{sid}.json 最近10条用户消息。
     try:
         _ph = ROOT / "data" / "state" / f"prompt_history_{_sid8}.json"
         if _ph.exists():
-            _hist = json.loads(_ph.read_text(encoding="utf-8"))
+            _hist = json.loads(_ph.read_text(encoding="utf-8-sig"))
             if isinstance(_hist, list):
                 for _m in reversed(_hist):
                     _m = (str(_m) or "").strip()
-                    if len(_m) >= 6:  # 跳过"继续"/"ok"类碎片
+                    if _classify_user_msg(_m) == "instr":
                         anchor = _m[:80]
                         break
     except Exception:
@@ -146,10 +195,29 @@ def inject() -> str:
     _csp = ROOT / "data" / "state" / "cog_step.json"
     if _csp.exists():
         try:
-            _cs = json.loads(_csp.read_text(encoding="utf-8"))
+            _cs = json.loads(_csp.read_text(encoding="utf-8-sig"))
             _win = (_cs.get("_meta") or {}).get("window_id") or ""
-            if _win and str(_win).startswith(_sid8):
-                anchor = ((_cs.get("description") or _cs.get("label") or "").strip())[:80]
+            if _win and _sid_match(_win, _sid8):
+                _body = (_cs.get("description") or _cs.get("label") or "").strip()
+                _cat = (_cs.get("category") or "").strip()  # v3: 分类前缀, 选卡粒度到"修什么类的问题"
+                anchor = (f"{_cat}:{_body}" if _cat and _cat not in _body else _body)[:80]
+        except Exception:
+            pass
+
+    # ①b 本窗口 cog_step_end (Stop hook 每轮保留的最终声明, 窗口匹配+24h内)
+    # @add 2026-09-01: cog_step TTL 300s 过期后原实现跌回⓪口水话; end文件无TTL焦虑, 专治"声明过期锚点失守"
+    if not anchor:
+        _cse = ROOT / "data" / "state" / "cog_step_end.json"
+        try:
+            if _cse.exists():
+                _mt = _cse.stat().st_mtime
+                if time.time() - _mt < _MAX_AGE:
+                    _ce = json.loads(_cse.read_text(encoding="utf-8-sig"))
+                    _win = (_ce.get("_meta") or {}).get("window_id") or ""
+                    if _win and _sid_match(_win, _sid8):
+                        _body = (_ce.get("description") or _ce.get("label") or "").strip()
+                        _cat = (_ce.get("category") or "").strip()
+                        anchor = (f"{_cat}:{_body}" if _cat and _cat not in _body else _body)[:80]
         except Exception:
             pass
 
@@ -159,7 +227,7 @@ def inject() -> str:
         _mt = _fresh_mtime(_gt)
         if _mt and time.time() - _mt < _MAX_AGE:
             try:
-                _g = _gt.read_text(encoding="utf-8").strip()
+                _g = _gt.read_text(encoding="utf-8-sig").strip()
                 # @fix 2026-08-16 安全审查: 严格前缀匹配, 子串查找可被正文含 sid8 字样误放行
                 if not _g.startswith(f"sid:{_sid8}"):
                     _g = ""  # 无前缀或别的窗口的 goal → 不算
@@ -243,12 +311,31 @@ def inject() -> str:
     picked_ids = [p for p in picked_ids if p in id_map][:5]
     if not picked_ids:
         return ""
+    # @add 2026-09-17 maintainer批: 选中卡确定进入注入文本 → hit_count+1 写回(第五环点火)
+    try:
+        from retrieval_pipeline import bump_hits
+        bump_hits([id_map[p] for p in picked_ids])
+    except Exception:
+        pass
 
     # ③ 本地逐字组装 (理由段用模型原文, 卡片正文从卡片库逐字取)
     reason_lines = [l for l in lines[1:] if l]
     card_blocks = []
     for cid in picked_ids:
         c = cards[id_map[cid]]
+        if c.get("schema") == 2:
+            # v2.1 双型卡 (2026-09-01 maintainer定: 错误/正确代码-逻辑对比才注入有效信息)
+            tw = c.get('trigger_when') or ''
+            bd = c.get('boundary') or c.get('date') or ''
+            if c.get("type") == "pitfall":
+                block = (f"- 适用场景: {tw} | 错误逻辑: {c.get('wrong_logic','')} "
+                         f"❌ {c.get('wrong_code','—')} → 正确逻辑: {c.get('right_logic','')} "
+                         f"✅ {c.get('right_code','—')} | 边界: {bd}")
+            else:  # highlight: 纯正确知识, 单列代码与逻辑
+                block = (f"- 适用场景: {tw} | 设计要点: {c.get('logic','')} "
+                         f"✅ {c.get('code','—')} | 边界: {bd}")
+            card_blocks.append(block)
+            continue
         block = f"- 《{c.get('title') or '无题'}》(日期:{c.get('date') or '无'}) 内容:{c.get('content') or ''}"
         if (c.get("lesson") or "").strip() and c.get("lesson") != "无":
             block += f" | 教训:{c.get('lesson')}"
@@ -275,6 +362,17 @@ def inject() -> str:
     _audit_ki("unified_inject", result, "知识卡片导航", f"anchor:{anchor[:20]}")
     # @since 2026-08-19 maintainer要求: 注入时 CC 屏幕显示框图 — 选中卡片可视化
     _write_viz(anchor, picked_ids, id_map, cards, reason_lines)
+    # @add 2026-09-05 第四重死亡修复(maintainer方案A: 声明即检索请求): 四字段写 pending 文件,
+    # PreToolUse 钩子在 AI 下一次写文件前交付 — 交付点=AI节律(cog声明)而非用户节律
+    try:
+        _sid = _SI.sid_key()  # @fix 2026-09-10: uuid 核短键, 与消费端 CC env[:8] 同值
+        (ROOT / "data" / "state" / "card_pending.json").write_text(
+            json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "target_sid": _sid,   # @fix 2026-09-05 跨窗口串卡(暴毙点家族): 只许正主窗口消费
+                        "anchor": anchor[:80], "text": result}, ensure_ascii=False),
+            encoding="utf-8")
+    except Exception:
+        pass
     return result
 
 
@@ -298,23 +396,57 @@ def _write_viz(anchor, picked_ids, id_map, cards, reason_lines):
         pass
 
 
+def _log_ds_chat_failure(error: str, detail: dict | None = None) -> None:
+    """选卡调用失败留痕 (@add 2026-09-10)。
+
+    原实现 except 后静默 return "" — 故障只以 api_pipeline 打印的无信息空框呈现
+    (七大致死模式#4 静默失败), 事后无法诊断。此处只追加 JSONL, 不抛异常, 不改变调用方语义。
+    """
+    try:
+        p = ROOT / "data" / "state" / "unified_inject_errors.jsonl"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                "error": str(error)[:500],
+                                "detail": detail or {}}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def _ds_chat(system: str, user: str, max_tokens: int = 800) -> str:
-    """知识注入统一入口 → opencode DS Flash (2026-08-16 夜对齐: MiMo 实测把推理链写进 content、
-    不遵守"第一行点名"格式契约, 换回 opencode; 走 api_pipeline 可换)"""
+    """知识注入选卡统一入口 → opencode MiMo, 经 mimo_call 轮子。
+
+    @fix 2026-09-10: 原实现裸调 api_pipeline.call("opencode","mimo-v2.5"), 绕过了 mimo_call
+      轮子 → 命中 mimo 免费档三坑之"空文本静默失败"(审计轨迹实测间歇性 22.9s/48.2s 失败,
+      而同参数小 payload 单独复测成功)。改走轮子: 线程锁+TTL 文件锁防 429、空文本自动重试
+      2 次、error 结构化返回。model/endpoint 保持原值(mimo-v2.5 + Go 池), 不改变上游行为。
+    @fix 2026-08-19: 选卡是轻判断, mimo 思考模式会把 max_tokens 全花在
+      reasoning_content 上 → content 空或截断(finish=length) → 点名行乱/空。
+      thinking disabled 后实测格式正常。2000 token 给足正文余量。
+    """
     try:
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
-        from scripts.wheels.api_pipeline import call
-        # @fix 2026-08-19: 选卡是轻判断, mimo 思考模式会把 max_tokens 全花在
-        # reasoning_content 上 → content 空或截断(finish=length) → 点名行乱/空。
-        # thinking disabled 后实测格式正常。8021 token 给足正文余量。
-        r = call("opencode", "mimo-v2.5",
-                 messages=[{"role": "system", "content": system},
-                           {"role": "user", "content": user}],
-                 max_tokens=max(max_tokens, 2000), auto_route=False, timeout_s=90,
-                 extra_body={"thinking": {"type": "disabled"}})
-        return (r.get("text") or "").strip() if r and r.get("ok") else ""
-    except Exception:
+        from scripts.wheels.mimo_free import mimo_call
+        # @fix 2026-09-10 选卡模型换 DS Flash(实测真实 payload, ~1091 tokens, n=2):
+        #   mimo-v2.5 + Go 池      成功 0/2, 平均 38773ms, 文本空      ← 原生产配置, 真实 payload 必失败
+        #   deepseek-v4-flash + Zen 成功 2/2, 平均  4202ms, 405/427 字 ← 采用
+        #   deepseek-v4-flash + Go  成功 2/2, 平均  4435ms, 但输出被截断(仅首行 16 字, 缺逐条理由),
+        #                           且波动大(另一轮 236/322 字) → 完整性不可靠
+        # 保留 mimo_call 作调用壳: 它提供跨进程串行锁(防 429) + 空文本自动重试 + 结构化 error,
+        # 与模型无关(内部走 api_pipeline._call_opencode_api)。
+        r = mimo_call(user, system=system, max_tokens=max(max_tokens, 2000),
+                      model="deepseek-v4-flash", endpoint="base_url", timeout_s=90,
+                      extra_body={"thinking": {"type": "disabled"}})
+        if r.get("ok"):
+            return (r.get("text") or "").strip()
+        _log_ds_chat_failure(r.get("error") or "call_failed_no_error",
+                             {"retries": r.get("retries"),
+                              "elapsed_ms": r.get("elapsed_ms"),
+                              "tokens": r.get("tokens")})
+        return ""
+    except Exception as e:  # noqa: BLE001
+        _log_ds_chat_failure(f"{type(e).__name__}: {e}")
         return ""
 
 

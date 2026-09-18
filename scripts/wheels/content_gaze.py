@@ -262,7 +262,7 @@ def gaze(file_path: str) -> dict | None:
 
 
 # ── 定期整理 (--sweep) ──────────────────────────────
-# @fix 2026-08-02 maintainer决策: 内容凝视改定期脚本自动整理, 不再每次 Write 触发。
+# @fix 2026-08-02 张maintainer决策: 内容凝视改定期脚本自动整理, 不再每次 Write 触发。
 # 扫描最近 SWEEP_WINDOW 秒内修改的产出文件, 逐个评估写日志(替代事件驱动)。
 # 消除: ①每次 Write spawn 进程空转+弹窗 ②自动激活死链(ops_freq 末30行挤满/GAZE_TTL 过期)。
 SWEEP_WINDOW = 24 * 3600  # 扫最近24h修改

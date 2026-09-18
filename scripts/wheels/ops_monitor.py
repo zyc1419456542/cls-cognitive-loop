@@ -38,7 +38,7 @@ LOOP_COOLDOWN = 30                        # Layer1 冷却秒数, 防风暴
 LOOP_MIN_FINGERPRINT = 3                  # 同命令指纹 ≥3 触发标记
 LOOP_MIN_WRITE = 3                        # 同 Write 文件 ≥3 触发标记
 LOOP_BASH_WRITE_MIN = 6                   # Bash/Write 占比下限
-# @since 2026-08-01 maintainer定调: 反馈互动体系 (评分→降敏)
+# @since 2026-08-01 张maintainer定调: 反馈互动体系 (评分→降敏)
 FEEDBACK_FILE = ROOT / "data" / "state" / "ops_feedback.jsonl"
 FEEDBACK_TTL = 1800                       # 反馈有效期 30min, 过期自动恢复默认
 FEEDBACK_DESENS_THRESHOLD = 3             # score<3 = "太吵", 触发降敏
@@ -531,7 +531,7 @@ def _is_meta_cmd(fp: str) -> bool:
 
 
 # ── 反馈互动体系 (评分→降敏) ─────────────────────
-# @since 2026-08-01 maintainer定调: 告警单向→双向。assistant读完告警回 0-10 评分,
+# @since 2026-08-01 张maintainer定调: 告警单向→双向。assistant读完告警回 0-10 评分,
 # score<3="太吵" → 该指纹降敏(阈值 3→8) + 去重(同 reasons 不重复注入)。TTL 过期自动恢复。
 
 def _feedback_score(fp: str, now: float) -> float | None:

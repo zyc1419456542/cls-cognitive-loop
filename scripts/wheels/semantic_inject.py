@@ -64,7 +64,7 @@ def check_tier(prompt_text):
         "L2": [r"(代码|函数).{0,5}(审查|审计|review)", r"(refactor|重构|优化).{0,10}(代码|函数)",
                r"review.{0,10}(代码|函数|性能)", r"(性能|bug|漏洞).{0,5}(分析|检查)"],
         "L3": [r"(写|生成|创建).{0,15}(脚本|代码|程序|函数)", r"帮我.{0,15}(写|做|生成|创建)", r"(build|构建|开发)"],
-        "L4": [r"(物理|数学|推导|公式|仿真|PIC|<介质>|推力|磁场|电推)",
+        "L4": [r"(物理|数学|推导|公式|仿真|PIC|等离子体|推力|磁场|电推)",
                r"(设计|建模|分析|诊断|评估|比较|区别|优化)", r"为什么", r"原理", r"机制",
                r"关系", r"影响", r"趋势"],
     }
@@ -523,18 +523,18 @@ def _shorten_anchor(goal, maxlen=35):
 
 
 # ── 注入级别标注 ─────────────────────────────────
-# @add 2026-08-03 maintainer决策(参照 Codex 建议): 注入分级, 帮模型分层注意力, 防"看见但没采纳关键信息"。
+# @add 2026-08-03 张maintainer决策(参照 Codex 建议): 注入分级, 帮模型分层注意力, 防"看见但没采纳关键信息"。
 # 完整中文文字描述, 不用 advisory/required 压缩码。
 #   参考型·可忽略 — 背景/建议/提示, 采纳与否自行判断, 不强制行动, 无增量价值可直接忽略
 #   行动型·需行动  — 涉及任务正确性/安全关键约束, 请据此调整下一步动作; 已处理可跳过
 # 注意: 熔断/前置条件(required 硬闸)不在注入层, 由 PreToolUse deny 实现(未读即拦), 无需模型回执。
-# @fix 2026-08-16 四字段改造(maintainer批准): 级别标注压缩为一句带后果定义。
+# @fix 2026-08-16 四字段改造(张maintainer批准): 级别标注压缩为一句带后果定义。
 #   原"参考型·可忽略/行动型·需行动"展开描述太长; 一无所知的AI也看不懂。
 #   改为"级别+不做的后果": 参考/行动/强制执行, 强制级须回复首行 ANCHOR 回执。
 _INJECT_LEVELS = {
     "consider": "【级别】参考 — 不强制行动; 无增量可直接忽略。",
     "act": "【级别】行动 — 涉及任务正确性或安全约束; 已满足可跳过。",
-    # @add 2026-08-10 maintainer决策(方案B): 强制模式 — CLS 从"半自动参考"升级为"强制约束"。
+    # @add 2026-08-10 张maintainer决策(方案B): 强制模式 — CLS 从"半自动参考"升级为"强制约束"。
     # 长链推理(竞赛级)必须走认知循环, 不得以"建议/参考"对待。执行后在回复显式声明。
     "require": "【级别】强制执行 — 不执行=认知约束失效; 完成需在回复首行用 ANCHOR 声明。",
 }
@@ -542,6 +542,70 @@ def _level_tag(level: str) -> str:
     """注入级别完整文字标注 (默认参考型)"""
     return _INJECT_LEVELS.get(level, _INJECT_LEVELS["consider"])
 
+
+
+# ── 任务类别判定 (2026-09-01 maintainer定文案: 语义分析式路由, 删置信度数值) ──
+_CAT_RULES = [
+    # @v2 2026-09-10 maintainer打分-1驱动: 补巡检/监控/状态类高频词(COMSOL线72次"巡检"声明+maintainer日常问法),
+    # 补仿真/求解器/实验件名类词 — 之前全漏到默认"闲聊"造成误判
+    # 巡检排最前: 动作意图(巡检/查状态)优先于领域词(仿真/数据)截胡
+    ("巡检", r"巡检|跑得|活着|还活|监控|看下.*跑|死了|崩了|卡了|进度|r\d+|段\d"),
+    ("代码", r"代码|函数|脚本|bug|报错|编译|包|库|重构|接口|API|部署|调试|写个|实现"),
+    ("科研", r"论文|实验|数据|分析|推导|仿真|文献|公式|模型|参数|绘图|图谱|求解|收敛|矩阵|迭代|阴极|放电|羽流|探针|EEDF|等离子|COMSOL|MUMPS|PARDISO"),
+    ("哲学", r"意识|生命|意义|哲学|认知|自我|存在|自由|伦理"),
+]
+_CAT_STYLE = {
+    "代码": "小步修改、改完自测、复用现成轮子",
+    "科研": "结论先行、证据锚定、数值走脚本",
+    "巡检": "查进程/读日志/报状态, 有异常才深挖",  # 硬活但不是思考活 — 动作型监控
+    "哲学": "自然对话、不强求结论",
+    "闲聊": "放松回应、无认知义务",
+}
+_HEAVY_ADVICE = "重活: 多搜索找成熟方案(WebSearch/文档先行), 多用子代理并行工作"
+_LIGHT_ADVICE = "轻活: 独立思考, 快速实践尝试, 多与人类沟通"
+
+def _route_copy(prompt_text: str, tier: dict, cog_label: str = "") -> str:
+    """maintainer 2026-09-01 定调的语义路由文案: 叙述用户说了什么/判成什么类/建议什么风格。
+    不输出置信度数值(数值与幻觉挂钩, 且从未校准)。
+    @v2 2026-09-09 maintainer: cog声明label词头是一等公民(写作/巡检/修复…), 声明自分类优先于tier正则。"""
+    # cog声明label词头 → 类别覆盖 (label是AI自己写的分类, 优先于消息正则)
+    _LABEL_CAT = {
+        "写作": "文档写作", "巡检": "硬件仪器", "修复": "缺陷修复",
+        "调试": "缺陷修复", "分析": "数据处理", "实现": "代码编辑",
+        "编译": "代码编辑", "交付": "文档写作", "结论": "科研方法",
+    }
+    cat_override = None
+    for _w, _c in _LABEL_CAT.items():
+        if (cog_label or "").startswith(_w):
+            cat_override = _c
+            break
+    t = tier.get("tier", "L0")
+    txt = (prompt_text or "").strip().replace(chr(10), " ")
+    heavy = t in ("L4", "L3")
+    cat = "闲聊"
+    for name, pat in _CAT_RULES:
+        import re as _re
+        if _re.search(pat, txt):
+            cat = name
+            break
+    quote = txt[:30] + ("…" if len(txt) > 30 else "")
+    # @v2 2026-09-09 maintainer: cog声明label词头覆盖正则类别(label是AI自己写的分类)
+    if cat_override:
+        cat = cat_override
+    style = _CAT_STYLE.get(cat, _CAT_STYLE["闲聊"])
+    # @fix 2026-09-04 矛盾修(maintainer窗口实测): 闲聊类不配重活建议也不配强制级;
+    # 重活建议只对代码/科研类附加(两类才有"搜索成熟方案/子代理并行"的可执行含义)
+    if cat in ("闲聊", "哲学"):
+        # @fix 2026-09-07 矛盾修: 类别判闲聊但tier=L4强制 → 自相矛盾实拍(maintainer窗口逐字报告)。
+        # 类别判定优先: 闲聊/哲学永远是轻活参考级, 覆盖tier的L4强制。
+        return (f"用户说「{quote}」, 判定为{cat}任务, 轻活。"
+                f"此类任务建议保持: {style}。"
+                f"(tier判级{t}被类别覆盖: 闲聊/哲学不强制)")
+    if heavy:
+        return (f"用户说「{quote}」, 判定为{cat}任务({t}级, 重活)。"
+                f"此类任务建议保持: {style}。{_HEAVY_ADVICE}。")
+    return (f"用户说「{quote}」, 判定为{cat}任务({t}级, 轻活)。"
+            f"此类任务建议保持: {style}。{_LIGHT_ADVICE}。")
 
 def _tag_of(p: str) -> str:
     """从注入段提取系统标签(审计用) — 兼容四字段【消息】X(CLS)格式与旧【系统注入-X】格式"""
@@ -715,7 +779,7 @@ def _get_autonomy_nudge() -> str | None:
 
 
 # ── Ops 注入去重 (告知一次) ─────────────────────
-# @since 2026-08-01 maintainer定调: 同 reasons 已告知过 → 不重复注入, 防 cron 每5min刷屏。
+# @since 2026-08-01 张maintainer定调: 同 reasons 已告知过 → 不重复注入, 防 cron 每5min刷屏。
 # 30min TTL: 同指纹循环持续超30min → 可再告知一次(真故障该再喊)。per-session 防多窗口踩踏。
 
 def _ops_injected_file() -> Path:
@@ -749,7 +813,7 @@ def _ops_mark_injected(reasons: str) -> None:
         pass
 
 
-# ── 语义路由降频: 同 tier 连续静默 (方案A, 2026-08-02 maintainer批准) ──
+# ── 语义路由降频: 同 tier 连续静默 (方案A, 2026-08-02 张maintainer批准) ──
 # 背景: 注入审计显示语义路由 300/300 注入率(100%), 每轮都进 additionalContext 占上下文。
 # 注入三原则(能自查/有增量/抗过时)对语义路由全否 → 降频。
 # 方案A: tier 判定不变 → 跳过 additionalContext 注入(仅保留审计); tier 变化才注入。
@@ -811,7 +875,7 @@ def _strip_hook_injections(prompt_text: str) -> str:
     背景: UserPromptSubmit hook 链顺序执行 (PromptSubmit.ps1 → PromptSubmit_search.py
     → semantic_inject.py), 下游 data.prompt = 用户输入 + 上游注入文本。若把含注入的
     完整文本记为 human input (prompt_history/last_human_input_preview), 下轮 hook 拿
-    注入文本跑正则命中字面关键词(vs/差异/区别) → 自我回放 (自噬循环, maintainer"秒出"根因)。
+    注入文本跑正则命中字面关键词(vs/差异/区别) → 自我回放 (自噬循环, 张maintainer"秒出"根因)。
 
     剥离规则: 最后一个 '⎿ UserPromptSubmit says:' 注入块正文以 【/[/（/系统注入 开头,
     真实用户消息在最后一个 '句号+空白' 之后。极端 case (无'句号+空白'分隔/无真实消息)
@@ -851,9 +915,10 @@ def main():
             if sid:
                 os.environ["CLAUDE_SESSION_ID"] = sid
     except Exception: prompt_text = ""
+    _cog_label = ""
     if not prompt_text: sys.exit(0)
 
-    # 注入质量反馈 config — analyzer 自动调整后生效 (maintainer决策: 自动+报告供审查)
+    # 注入质量反馈 config — analyzer 自动调整后生效 (张maintainer决策: 自动+报告供审查)
     # @fix 2026-08-01: 闭环 打分→inject_feedback_analyzer→inject_feedback_config.json→此处生效。
     # types: 漂移/Ops/认知/统一 = on/off (off 关停对应注入段); threshold_delta 放宽/收紧 cosine 阈值。
     _types = {}
@@ -877,7 +942,7 @@ def main():
     # @fix 2026-08-01: 原 check_drift_real 先跑, semantic_detect 后跑, Layer0 标记不参与漂移 → 断层
     layer0 = {}
     loop_res = {}
-    # @fix 2026-08-01e maintainer定调: 仅无人值守态做循环分析 — 人类在场不判循环(省SF, 与漂移同门)。
+    # @fix 2026-08-01e 张maintainer定调: 仅无人值守态做循环分析 — 人类在场不判循环(省SF, 与漂移同门)。
     # "不用我说一句话就分析一次" → active(人类打字)态完全静默, 连 semantic_detect 都不调。
     if _types.get("Ops", "on") == "on" and state.get("state") == "unattended":
         try:
@@ -897,10 +962,10 @@ def main():
         tier = check_tier(prompt_text)
         if _tier_should_inject(tier):
             ctx_text = (
-                f"【消息】语义路由(CLS): 自动读你的输入、判轻活/重活的分类器, 非用户指令。"
-                f"【为什么】本轮输入判定为 {tier['tier']}(置信{tier['confidence']:.0%})。轻活重判浪费算力, 重活轻判做不深。"
+                f"【消息】语义路由(CLS): 后台读你的输入、判工作风格, 非用户指令。"
+                f"【为什么】{_route_copy(prompt_text, tier, _cog_label)}"
                 f"{_level_tag('consider')}"
-                f"【内容】系统巡检轮, 按{tier['tier']}层级选择对应推理深度。"
+                f"【内容】系统巡检轮, 按上述风格处理。"
             )
         else:
             ctx_text = ""  # 同 tier 静默 (心跳巡检不重复注入)
@@ -913,7 +978,7 @@ def main():
     # ── 四段式注入: 这是什么|为什么|状态|建议 ──
     parts = []
 
-    # ① 语义路由 — @fix 2026-08-02 方案A(maintainer批准): 同 tier 连续静默。
+    # ① 语义路由 — @fix 2026-08-02 方案A(张maintainer批准): 同 tier 连续静默。
     #    原"每轮必有"(300/300 注入率)违反注入三原则。tier 变化才注入, 同 tier 跳过 additionalContext。
     # @add 2026-08-10 方案B: L4/L3 每轮强制注入(绕过同tier静默), L2/L0 参考(consider)。
     # L4 长链推理(竞赛/架构级)必须持续走认知循环, 不得跳步。
@@ -926,17 +991,62 @@ def main():
         else:
             tier_advice = {"L2":"独立视角逐项核对, 不求快求全","L0":"简化推理, 快速完成"}.get(tier["tier"],"按需推理")
         parts.append(
-            f"【消息】语义路由(CLS): 自动读你的输入、判轻活/重活的分类器, 非用户指令。"
-            f"【为什么】本轮输入判定为 {tier['tier']}级{tier_label}(置信{tier['confidence']:.0%})。轻活重判浪费算力, 重活轻判做不深。"
+            f"【消息】语义路由(CLS): 后台读你的输入、判工作风格, 非用户指令。"
+            f"【为什么】{_route_copy(prompt_text, tier, _cog_label)}"
             f"{_level_tag('require') if _require_tier else _level_tag('consider')}"
             f"【内容】{'要求' if _require_tier else '建议'}:{tier_advice}"
         )
         if _require_tier:
             _log_require({"tier": tier["tier"], "type": "语义路由", "action": tier_advice, "evidence": "ANCHOR: / cog_step.json"})
 
-    # ② 漂移检测 (无人态守护, 偏离冻结锚时触发)
+    # ②-pre 知识卡节律触发 (2026-09-04 maintainer定: cog_step 3次声明1插入 + 本钩子双挂载)
+    # 节流三保险: cog节律或10min冷却 + 内容hash去重 + 异步spawn不阻塞
+    # @add 2026-09-09: cog_label 读声明 label — "闲聊"类覆盖 tier 强制(v3.3 maintainer: cog加闲聊类)
+    try:
+        _COG = ROOT / "data" / "state" / "cog_step.json"
+        if _COG.exists():
+            _cs0 = json.loads(_COG.read_text(encoding="utf-8-sig"))
+            _cog_label = str(_cs0.get("label") or "")
+    except Exception:
+        _COG = ROOT / "data" / "state" / "cog_step.json"
+    try:
+        _COG = ROOT / "data" / "state" / "cog_step.json"
+        _CARD_STATE = ROOT / "data" / "state" / "card_pulse_state.json"
+        _ver = _fired_at = _last_ver = 0
+        _last_hash = ""
+        if _COG.exists():
+            try:
+                _cs = json.loads(_COG.read_text(encoding="utf-8"))
+                _ver = int((_cs.get("_meta") or {}).get("version") or 0)
+            except Exception:
+                pass
+        if _CARD_STATE.exists():
+            try:
+                _ps = json.loads(_CARD_STATE.read_text(encoding="utf-8"))
+                _fired_at = float(_ps.get("ts") or 0)
+                _last_ver = int(_ps.get("ver") or 0)
+                _last_hash = _ps.get("hash") or ""
+            except Exception:
+                pass
+        _cog_3 = (_ver // 3) > (_last_ver // 3)   # 3次声明1插入(maintainer定)
+        _time_ok = (time.time() - _fired_at) > 600  # 10min冷却(密集测试期)
+        if _cog_3 or _time_ok:
+            import hashlib as _hl
+            _h = _hl.sha256((prompt_text or "")[:120].encode()).hexdigest()[:16]
+            if _h != _last_hash:
+                import subprocess as _sp
+                _sp.Popen(["pythonw", str(ROOT / "scripts" / "wheels" / "unified_inject.py")],
+                          creationflags=0x08000000)
+                _CARD_STATE.write_text(json.dumps({"ts": time.time(), "ver": _ver, "hash": _h}), encoding="utf-8")
+    except Exception:
+        pass
+        # 触发条件: version跨越3的倍数 且 上次触发后版本确实变了(防同版本重复)
+        _cog_3 = (_ver // 3) > (_last_ver // 3)
+        # 双挂载条件: 距上次触发>10min(密集测试期)
+
+# ② 漂移检测 (无人态守护, 偏离冻结锚时触发)
     # @fix 2026-08-01: 反馈环 config 可关停本段 + 动态阈值 (阈值0.40+threshold_delta, analyzer自动调整)
-    # @fix 2026-08-01b: 加冷却 — 同session 5min内最多注入一次, 防闲聊/持续漂移每轮轰炸 (maintainer反馈"每次都注入")
+    # @fix 2026-08-01b: 加冷却 — 同session 5min内最多注入一次, 防闲聊/持续漂移每轮轰炸 (张maintainer反馈"每次都注入")
     # @fix 2026-08-01c (v7): 仅 unattended 态注入 — 人类在场不判漂移(人类自己发现), 无人值守才守护任务边界
     if drift["drifted"] and state.get("state") == "unattended" and _types.get("漂移", "on") == "on":
         _allow_inject = True
@@ -986,7 +1096,7 @@ def main():
     # ⑤ Ops监控 — 三层管道 (硬闸门标记→SF小模型语义判定→仅无人态+未重复+真循环注入)
     # @fix 2026-08-01: 原按 diversity/alerts 机械注入 → Bash密集任务误报"工具单一化"每轮轰炸。
     # 现改为: Layer0 规则标记(同命令/同文件/Bash密集无探索) → Layer1 SF免费小模型判定是否真循环。
-    # @fix 2026-08-01d maintainer定调: Ops注入绑认知循环 — 仅 unattended(无人值守)态注入;
+    # @fix 2026-08-01d 张maintainer定调: Ops注入绑认知循环 — 仅 unattended(无人值守)态注入;
     # 人类打字在场=active=静默(人类自己能看, 机器不吵)。+ 同 reasons 去重(告知一次), 防 cron 每5min刷屏。
     # 反馈互动: assistant可 `ops_monitor.py feedback --fp <指纹> --score <0-10>` 降敏(阈值3→8), 见 ops_monitor.py。
     if (_types.get("Ops", "on") == "on"
@@ -1060,9 +1170,9 @@ def main():
     except: pass
 
     # ⑧ 注入质量反馈 (随机触发打分) — @fix 2026-08-01
-    # 借鉴 CC 1/2/3/4 反馈模式 (maintainer决策): 让执行窗口对最近语义分析类注入打分,
+    # 借鉴 CC 1/2/3/4 反馈模式 (张maintainer决策): 让执行窗口对最近语义分析类注入打分,
     # 收集真实反馈反哺阈值/降频/关停。完全随机触发(5%), 模型无法预判 → 不因"要被打分"改变行为。
-    # hard cap 30轮防数据断层(模型不知此cap)。打分请求上屏(maintainer可见)+进additionalContext。
+    # hard cap 30轮防数据断层(模型不知此cap)。打分请求上屏(张maintainer可见)+进additionalContext。
     try:
         import random
         FEEDBACK_RATE = 0.02        # 每轮 2% 概率 (@fix 2026-08-16 maintainer反馈降频: 5%→2%)

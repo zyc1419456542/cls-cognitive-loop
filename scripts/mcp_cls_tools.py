@@ -31,6 +31,7 @@ from mcp.server.fastmcp import FastMCP
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "wheels"))  # 让 wheels 间相对 import 可用
+import session_identity as _SI  # 跨运行时窗口身份唯一来源 (@add 2026-09-10; 必须在首次使用点之前)
 
 # ─── MCP 服务初始化 ─────────────────────────────────
 mcp = FastMCP(
@@ -360,7 +361,7 @@ def capability_lookup(
     """查询能力路由器，找到处理指定任务的轮子。
 
     Args:
-        task_text: 任务描述（自然语言），如"画一个CAD零件图"、"搜索<DOMAIN设备>论文"
+        task_text: 任务描述（自然语言），如"画一个CAD零件图"、"搜索霍尔推力器论文"
 
     Returns:
         JSON: {matched_tool, path, usage, confidence}
@@ -456,6 +457,7 @@ def baobi_record(
 )
 def progress_record(
     output: str,
+    task_source: str = "",  # @add 2026-09-10: filer 必填字段, 原签名缺失致 Namespace 无此属性必崩
     title: str = "",
     completed: str = "",
     next_step: str = "",
@@ -472,6 +474,7 @@ def progress_record(
 
     Args:
         output: 本阶段产出（必填）
+        task_source: 任务来源（filer 必填）：今天干什么来的？maintainer给的/自主发现的/临时批注？
         title: 双轨文件名内容简介(缺省从output提取前30字)
         completed: 完成的事项
         next_step: 下一步计划
@@ -490,29 +493,31 @@ def progress_record(
     # @fix 2026-08-21 甲方案(maintainer定): 补齐6个结构化字段 — 原包装只有5参数,
     # 与 progress_file_filer 当日 YAML frontmatter 改造脱节, 走MCP记录会丢数据飞轮字段。
     try:
-        from scripts.wheels.progress_file_filer import record
-        # @fix 2026-08-27 (dsh侧报障): 原Namespace缺 title 字段, _make_title 读 args.title 必崩
-        # ('Namespace' object has no attribute 'title') — CC侧一直走CLI带--title从未暴露, dsh AI走MCP即触发
-        ns = argparse.Namespace(
-            command="record",
-            output=output,
-            title=title,
-            completed=completed,
-            next_step=next_step,
-            track=track,
-            date="",
-            time="",
-            extra=extra,
-            conclusion=conclusion,
-            decision=decision,
-            lesson=lesson,
-            highlight=highlight,
-            difficulty=difficulty,
-            source=source,
-            dest="",
-            typ="",
-            dry_run=False,
-        )
+        from scripts.wheels.progress_file_filer import record, build_parser
+        # @fix 2026-09-10 (同族第二次复发): 原实现手写 argparse.Namespace, 字段靠人工与 filer 对齐,
+        #   已两次漏字段崩溃: 'title'(2026-08-27) / 'task_source'(本次)。
+        #   (另注: knowledge早有结论"手工构造Namespace时未检查字段一致性", 教训在库而 bug 照发 →
+        #    说明手补字段的解法无效, 必须收敛字段定义来源。)
+        #   改为从 filer 自己的 parser 取全部默认值(字段定义单一来源), 再覆盖 MCP 入参 —
+        #   此后 filer 增删字段自动同步, 该类漂移不可能复发。
+        #   安全性已核: record() 路径只读 record 子命令声明的字段 + command;
+        #   args.type / args.dry_run 仅 move()/scan() 使用, 不在本路径。
+        ns = build_parser().parse_args(["record"])
+        ns.output = output
+        ns.task_source = task_source
+        ns.title = title
+        ns.completed = completed
+        ns.next_step = next_step
+        ns.track = track
+        ns.date = ""
+        ns.time = ""
+        ns.extra = extra
+        ns.conclusion = conclusion
+        ns.decision = decision
+        ns.lesson = lesson
+        ns.highlight = highlight
+        ns.difficulty = difficulty
+        ns.source = source
         import io
         from contextlib import redirect_stdout
         f = io.StringIO()
@@ -816,7 +821,7 @@ def paper_search_arxiv(
     """在 arXiv 上搜索论文。
 
     Args:
-        query: 搜索查询（如 "<DOMAIN device> wall erosion"）
+        query: 搜索查询（如 "hall thruster wall erosion"）
         max_results: 最大返回数（默认 10，最大 50）
 
     Returns:
@@ -880,7 +885,7 @@ def paper_search_s2(
 @mcp.tool(
     name="cls-paper-search-download",
     description="🔴 文献调研首选。一键完成：搜索arXiv→下载PDF→提取全文文本→输出论文来源、下载路径、核心内容。"
-    "查询<DOMAIN>/<介质>/<DOMAIN设备>论文时优先用此，避免只搜不下载(incident-log#61)。最多5篇。"
+    "查询电推进/等离子体/霍尔推力器论文时优先用此，避免只搜不下载(incident-log#61)。最多5篇。"
     "输出含：arxiv链接、PDF本地路径、全文txt路径、摘要、关键段落。",
 )
 def paper_search_download(
@@ -1223,13 +1228,15 @@ def fuse_board_tool(action: str, fuse_type: str = "", reason: str = "", context:
 
 
 # ═══════════════════════════════════════════════════════
-# 工具 18: 双AI闸门 (决策表 #10 — qwen_gate MCP 包装)
+# 工具 18: 独立验证闸门 (决策表 #10 — qwen_gate MCP 包装)
+#   名称 @rev 2026-09-17: 原名"双AI闸门"名不副实 —— 实测只有一路审计员(兜底两级缺 key)
 # ═══════════════════════════════════════════════════════
 
 @mcp.tool(
     name="cls-qwen-gate",
-    description="双AI闸门 — 三段式独立验证 (CAD设计/知识声明/数值计算)。"
-    "与被动熔断 fuse_board 不同，此为主动调用 Qwen (或 Anthropic 后备) 做第三方验证。"
+    description="独立验证闸门 — 三段式独立验证 (CAD设计/知识声明/数值计算)。"
+    "与被动熔断 fuse_board 不同，此为主动调用外部模型做第三方验证。"
+    "⚠️ 只有一路审计员(硅基流动 SF Qwen)，不是双模型互证。"
     "支持 status(查看状态) / verify-cad(CAD设计) / verify-knowledge(知识) / verify-numerical(数值) / gate-if-needed(条件触发)",
 )
 def qwen_gate_tool(
@@ -1246,7 +1253,7 @@ def qwen_gate_tool(
     context_tokens: int = 0,
     target_kb: bool = False,
 ) -> str:
-    """双AI闸门。
+    """独立验证闸门。
 
     Args:
         action: status(闸门统计) | verify-cad(CAD设计) | verify-knowledge(知识声明) |
@@ -1683,7 +1690,7 @@ def pic_topology_analyze_tool(
 
         if not field_path:
             field_path = str(Path(
-                "E:/<ORG_REDACTED>/PIC/丁睿pic/丁睿磁屏蔽新设计/danjicipingbiSPT_Kr_Te5/output/FIELD_AVG.DAT"
+                "<ORG_DIR>/PIC/丁睿pic/丁睿磁屏蔽新设计/danjicipingbiSPT_Kr_Te5/output/FIELD_AVG.DAT"
             ))
 
         from scripts.wheels.pic_io import load_field_avg_grid
@@ -1754,14 +1761,14 @@ def _get_numpy_encoder():
 )
 def pic_engineering_analyze_tool(
     field_path: str = "",
-    partB_voltage: float = 300.0,
+    anode_voltage: float = 300.0,
     mass_flow_kg_s: float = 1.34e-6,
 ) -> str:
     """运行 PIC 工程分析三合一。
 
     Args:
         field_path: FIELD_AVG.DAT 完整路径. 空则使用默认.
-        partB_voltage: <部件B>电压 [V]
+        anode_voltage: 阳极电压 [V]
         mass_flow_kg_s: 质量流量 [kg/s]
 
     Returns: JSON
@@ -1772,7 +1779,7 @@ def pic_engineering_analyze_tool(
 
         if not field_path:
             field_path = str(Path(
-                "E:/<ORG_REDACTED>/PIC/丁睿pic/丁睿磁屏蔽新设计/danjicipingbiSPT_Kr_Te5/output/FIELD_AVG.DAT"
+                "<ORG_DIR>/PIC/丁睿pic/丁睿磁屏蔽新设计/danjicipingbiSPT_Kr_Te5/output/FIELD_AVG.DAT"
             ))
 
         from scripts.wheels.pic_io import load_field_avg_grid
@@ -1801,7 +1808,7 @@ def pic_engineering_analyze_tool(
         hist = {
             "i_dis_total": 1.031, "i_ion_total": 0.855,
             "thrust_mN": 14.82, "isp_s": 1163,
-            "eff_partB": 0.273, "eff_utility": 0.570,
+            "eff_anode": 0.273, "eff_utility": 0.570,
             "eff_current": 0.829,
         }
 
@@ -1809,7 +1816,7 @@ def pic_engineering_analyze_tool(
             analyze_efficiency, analyze_erosion_proxy, analyze_particle_balance,
             ChannelConfig,
         )
-        cfg = ChannelConfig(partB_voltage=partB_voltage, mass_flow=mass_flow_kg_s)
+        cfg = ChannelConfig(anode_voltage=anode_voltage, mass_flow=mass_flow_kg_s)
 
         eff = analyze_efficiency(cl, hist, {}, cfg)
         epi = analyze_erosion_proxy(data, var_idx, x, y, cfg)
@@ -1845,7 +1852,25 @@ def pic_engineering_analyze_tool(
 
 _COG_LOCK_DIR = PROJECT_ROOT / "data" / "state" / "locks"
 _COG_LOCK_DIR.mkdir(parents=True, exist_ok=True)
-_COG_WINDOW_ID = os.environ.get("CLAUDE_CODE_SESSION_ID", "cc_unknown")[:16]
+# @redesign 2026-09-09 maintainer定: window_id 参数化 + runtime 前缀。
+# 背景: dsh 的 MCP 进程是 web 启动时 spawn 的常驻进程, 无 CLAUDE_CODE_SESSION_ID 环境
+#   → 永远落 cc_unknown, dsh/CC 窗口混串。修复:
+#   ① _COG_WINDOW_ID 改函数 _cog_window_id(window_id=None): 显式传参(dsh AI 调用时传自己 agent id)
+#     > 环境变量(CC 会话子进程天然带) > "unknown"
+#   ② 格式: "{runtime}:{sid}" — cc:xxxx / dsh:xxxx, 知识图谱可识别来源运行时
+# @fix 2026-09-10: 原默认值只读 CLAUDE_CODE_SESSION_ID → DSH 下恒为空 → 落 "unknown"。
+#   实测 data/state/ 下 cog_step.json / active_context.json / fencing_token.json 的
+#   window_id 全为 'unknown' → DSH 各窗口塌缩成同一个 id, 互相误认(串窗口根因)。
+#   原注释把修复寄托于"dsh AI 调用时传 window_id" —— 那是**约定而非机制**, 漏传即塌回 unknown。
+#   现委托 session_identity: DSH 侧取剥掉 'session-' 的 uuid, 与桥接的 CC id 同核, 两侧可互认。
+_COG_DEFAULT_WINDOW = ("" if _SI.current_window_id() == _SI.UNKNOWN
+                       else _SI.current_window_id())
+
+def _cog_window_id(window_id: str = "") -> str:
+    if window_id and str(window_id).strip():
+        return _SI.normalize(str(window_id).strip()[:24])
+    return _COG_DEFAULT_WINDOW or _SI.UNKNOWN
+
 _COG_MAX_LOCK_AGE = 600   # 僵尸锁清理阈值 (2x TTL)
 _COG_LOCK_TTL = 300        # 默认锁 TTL (s)，比原 30s 增加 10x 适应长认知循环
 _COG_TRAJ_MAX_LOG = 20     # 轨迹活跃条目上限（>此数自动摘要归档）
@@ -1898,10 +1923,10 @@ def _cog_lock(name: str, ttl: int = None) -> bool:
         if lp.exists():
             existing = json.loads(lp.read_text("utf-8"))
             age = time.time() - existing.get("acquired_at", 0)
-            if age < ttl and existing.get("window_id") != _COG_WINDOW_ID:
+            if age < ttl and not _SI.matches(existing.get("window_id"), _cog_window_id()):
                 return False
         _cog_atomic_write(lp, {
-            "window_id": _COG_WINDOW_ID,
+            "window_id": _cog_window_id(),
             "acquired_at": time.time(),
             "ttl": ttl,
             "version": _cog_next_version(),
@@ -1942,7 +1967,7 @@ def _cog_next_version() -> int:
         v += 1
         tmp = _COG_VERSION_FILE.with_suffix(f".tmp.{os.getpid()}")
         tmp.write_text(
-            json.dumps({"version": v, "window_id": _COG_WINDOW_ID, "updated_at": time.time()}),
+            json.dumps({"version": v, "window_id": _cog_window_id(), "updated_at": time.time()}),
             encoding="utf-8",
         )
         os.replace(str(tmp), str(_COG_VERSION_FILE))
@@ -2034,9 +2059,9 @@ def _cog_read(path: Path) -> tuple[dict | list, str | None]:
         return {}, None
 
 
-def _cog_make_meta() -> dict:
+def _cog_make_meta(window_id: str = "") -> dict:
     return {
-        "window_id": _COG_WINDOW_ID,
+        "window_id": _cog_window_id(window_id),
         "written_at": time.time(),
         "schema": "v2",
         "version": _cog_next_version(),
@@ -2064,7 +2089,7 @@ def _cog_telemetry(phase: str, event: str, duration_ms: int = 0,
             "ts": time.time(),
             "event_id": str(_uuid.uuid4())[:12],  # 用于下游去重
             "source": source,
-            "window_id": _COG_WINDOW_ID,
+            "window_id": _cog_window_id(),
             "session_id": os.environ.get("CLAUDE_CODE_SESSION_ID", "unknown")[:16],
             "phase": phase,
             "event": event,
@@ -2085,6 +2110,7 @@ def _cog_telemetry(phase: str, event: str, duration_ms: int = 0,
 # 写入唯一路径 = 本文件 cog-context(set-stance) → _cog_lock + _cog_cas_write(fencing CAS)。
 # 仓库铁律: 禁止 hook/脚本直写 active_context.json 的 stance 字段; 读取走 wheels/stance_read.py。
 from stance_read import read_stance as _stance_read_impl  # wheels 已在 sys.path (line 33)
+# 注: session_identity 已提到文件顶部导入为 _SI。原先误插在此处(晚于使用点 L1863) → NameError
 
 
 def set_stance(mode: str, ttl_seconds: int = 0, set_by: str = "", reason: str = "") -> dict:
@@ -2158,7 +2184,7 @@ def cog_context(action: str = "read", data: str = "", stance: str = "",
 
     if action == "set-stance":
         r = set_stance(stance, ttl_seconds=ttl_seconds,
-                       set_by=f"cog-context:{_COG_WINDOW_ID}", reason=reason)
+                       set_by=f"cog-context:{_cog_window_id()}", reason=reason)
         r["action"] = "set-stance"
         return json.dumps(r, ensure_ascii=False)
 
@@ -2191,17 +2217,17 @@ def cog_context(action: str = "read", data: str = "", stance: str = "",
         data, last_window = _cog_read(ctx_path)
         result["context"] = data
 
-        if action == "read-with-heartbeat" and last_window and last_window != _COG_WINDOW_ID:
+        if action == "read-with-heartbeat" and last_window and not _SI.matches(last_window, _cog_window_id()):
             meta = data.get("_meta", {}) if isinstance(data, dict) else {}
             written_age = time.time() - meta.get("written_at", 0) if meta.get("written_at") else float("inf")
             if written_age < 300:
                 result["conflict_warning"] = (
                     f"⚠️ 最后写入窗口 {last_window} ({written_age:.0f}s前)，"
-                    f"非当前窗口 {_COG_WINDOW_ID}。状态可能非此窗口的认知。"
+                    f"非当前窗口 {_cog_window_id()}。状态可能非此窗口的认知。"
                 )
                 _cog_telemetry("cog_context", "conflict_detected", duration_ms=int((time.time()-started)*1000),
                                lock_status="none", trigger="manual",
-                               error=f"window_conflict: {last_window} vs {_COG_WINDOW_ID}")
+                               error=f"window_conflict: {last_window} vs {_cog_window_id()}")
         _cog_telemetry("cog_context", action, duration_ms=int((time.time()-started)*1000))
 
     return json.dumps(result, ensure_ascii=False)
@@ -2242,6 +2268,22 @@ def cog_trajectory(
     result = {"status": "ok", "action": action}
     started = time.time()
 
+    # @deprecated 2026-09-12 maintainer批: append / update-meta 不再需要 ——
+    #   trajectory.json 现在是 data/state/intent_stream.jsonl 的**物化视图**
+    #   (见 scripts/wheels/trajectory_materialize.py, 由 CLS_Consolidator 每 30min 重算),
+    #   手写进去会被下一次物化覆盖。
+    #   **不报错**(避免调用方硬失败 —— incident-log#87 就是形参丢失致整条协议静默失效),
+    #   只回一条 deprecated 提示 + 该改用什么。
+    if action in ("append", "update-meta"):
+        return json.dumps({
+            "status": "deprecated", "action": action,
+            "note": "trajectory.json 已改为「意图流的物化视图」，每 30min 由 CLS_Consolidator 重算；"
+                    "手写会被覆盖。改用它：调用 cog-step-declare 时带上 "
+                    "intent / basis / beh(查改跑判说收) / kind(新事续上收尾) —— "
+                    "声明即自动落 intent_stream.jsonl，物化时会自动反映。",
+            "still_ok": "action=read / summary 仍可用（读物化结果）。",
+        }, ensure_ascii=False)
+
     if action == "append":
         if not point:
             return json.dumps({"status": "error", "error": "append 需要 point 参数"}, ensure_ascii=False)
@@ -2274,7 +2316,7 @@ def cog_trajectory(
                 "epoch": int(time.time()),
                 "count": len(old_entries),
                 "period": f"{old_entries[0].get('time', '?')}~{old_entries[-1].get('time', '?')}",
-                "window_id": _COG_WINDOW_ID,
+                "window_id": _cog_window_id(),
             }
             archive_path.parent.mkdir(parents=True, exist_ok=True)
             with open(str(archive_path), "a", encoding="utf-8") as af:
@@ -2353,35 +2395,175 @@ def cog_trajectory(
 
 @mcp.tool(
     name="cog-step-declare",
-    description="认知循环步骤声明 — 写 cog_step.json。"
+    description="认知循环步骤声明 — 写 cog_step.json (v3: 建议带 source/category/reasoning, 供知识选卡细粒度匹配)。"
     "每个 Write/Edit 前声明当前步骤，TTL=300s 自动过期。"
     "多窗口竞争时锁保护。",
 )
 def cog_step_declare(
-    phase: int,
-    label: str,
-    description: str,
+    phase,  # int 或 str("闲聊") — v3.3 加闲聊类(maintainer2026-09-07: cog自己分类, 语义路由按label词头识别)
+    label: str = "",  # @fix 2026-09-10: 形参在 phase 重构中丢失, 而函数体 L2414 用 "label": label
+                      #   → MCP 调用 NameError / CLI(label=关键字) TypeError, ANCHOR 协议整体失效。
+    description: str = "",
     previous_phase: str = "",
+    source: str = "",
+    category: str = "",
+    reasoning: str = "",
+    window_id: str = "",
+    # ── v4 结构化声明表 (2026-09-12 maintainer批): 与incident-log字段同构 ──
+    # 动机: 意图只能靠自报（要知道一个人要干嘛，只能听他的声称），而incident-log的字段本身就是语义槽。
+    #   让 AI 按同一套槽位声明，匹配就从"猜字面相似度"变成"比槽位有没有实质内容 + 是否可核"。
+    # 边界: 这些字段只驱动【提示/注入】，不驱动【禁止】—— 禁止必须基于可观测行为(工具/目标/产物)。
+    #   理由不是防作弊(AI 不会恶意工作)，而是防"真诚的错报"：incident-log#33/#54 都是 AI 真心相信自己做了。
+    intent: str = "",     # 现象 → 我要做什么（一句话）
+    basis: str = "",      # 根因 → 我凭什么认为该这么做（判据来源）
+    action: str = "",     # 修复 → 打算怎么做（分号分隔）
+    risk: str = "",       # 严重度 → reversible / costly / irreversible
+    refs: str = "",       # 关联 → 依据的文件路径（分号分隔）
+    selfcheck: str = "",  # 教训 → 我预判哪里会错 / 这一类的历史坑
+    # ── v4.1 行为/事件 (@add 2026-09-12 maintainer批): 供 benchmark 计数 ──
+    # 动机: "做一件事"需要一个可计数的分类才能算质量。原来的"策略选择分布熵"算不出来,
+    #   就是因为从来没定义过"一件事"和"一次选择"。现在: 一件事=一次声明, 行为=6 动词之一。
+    # 用途: 物化时 count → 行为分布 × 返工率 二维判读(见 trajectory_materialize.py)。
+    beh: str = "",        # 行为(自报, 6 选 1): 查 / 改 / 跑 / 判 / 说 / 收
+    kind: str = "",       # 事件(自报, 3 选 1): 新事 / 续上 / 收尾 —— 物化时据此串 task_id
 ) -> str:
-    """声明当前认知步骤。
+    """声明当前认知步骤 (v3 2026-09-01 maintainer定: 强烈建议带全三字段, 供知识选卡细粒度匹配)。
+    v3.2 (2026-09-09): window_id 参数 — dsh AI 调用时传自己的 agent id (格式 "dsh:xxx"),
+    CC 会话子进程不传(环境变量自动识别为 "cc:xxx"); 知识图谱按前缀区分来源运行时。
+    v4 (2026-09-12 maintainer批): 新增 6 个**可选**字段 intent/basis/action/risk/refs/selfcheck,
+    与incident-log字段同构; 写入时顺手落一条到 data/state/intent_stream.jsonl。
+    **老参数全保留, 新字段不传则行为与 v3 完全一致。**
 
     Args:
         phase: 步骤编号 (1-6)
         label: 步骤标签（如 "⑤上下文持久化 — 交付归档"）
         description: 步骤描述
         previous_phase: 上一步骤名（可选）
+        source: 问题来源 — 自发 / 报错 / 人类反馈 (v3)
+        category: 问题分类 — 受控词表11词 (v3.1, 合并arXiv软件工程任务分类学): 代码编辑 / 缺陷修复 / 仓库导航 / 测试验证 / 数据处理 / 硬件仪器 / 文档 / 架构 / 环境配置 / 发布运营 / 其他
+        reasoning: 假设→下一步, 一句式: "假设X→先验证Y" (v3, 对齐iter-065逻辑链)
+        window_id: 声明窗口标识 (v3.2, dsh调用必传: "dsh:你的agent/session id"; CC不传自动识别)
+
+        ─────────────────────────────────────────────────────────────
+        🔴 下面这些不是"备注", 每个字段衡量一种特定认知。
+           填之前先看它测什么 —— 填错/填空 = 这项认知**没被记录**, 等于系统在这件事上瞎了。
+           判据只驱动【提示/注入】, 不驱动【禁止】(禁止必须基于可观测行为)。
+        ─────────────────────────────────────────────────────────────
+
+        intent: 衡量【目标认知】—— 你知不知道自己要干什么。
+            · 一句话, 具体到对象(文件/函数/参数值)。
+            · ✅ "把 cfg.yaml 的 port 从 8080 改到 9090"
+            · ❌ "继续工作" / "处理问题" / 复述 label —— 这些没说出对象, 等于没声明。
+            · 下游用途: 与 label 一起推 kind(新事/续上/收尾), 是"同一件事做了几轮"的分子。
+
+        basis: 衡量【证据认知】—— 你凭什么认为这么做对。**这是 unverified_assumption 的主判据。**
+            · 答的是**判据来源**, 不是结论本身。
+            · 🔴 系统按措辞自动归类 —— **你怎么写, 决定了它被归成哪一类**:
+                "我记得/应该是/通常/一般"        → memory         ← 凭记忆。会当场返回「无本地依据」提示
+                "实测/跑过/看到报错/复现"        → hard_gate
+                "maintainer说/他确认过"                → human_confirmed
+                "文档写/CLAUDE.md 说"           → stated
+            · ✅ "实测: 跑 r54 报 KeyError, 缺 bweuler 字段"
+            · ✅ "据 CLAUDE.md 本地优先决策表: 文本处理走 cls-text-processor"
+            · ❌ "因为这样改是对的"(同义反复) / 留空
+            · 下游用途: 归类为 memory、或 refs 路径实测不存在 → 当场返回「无本地依据」提示,
+                要你先调研再答(本地没资料时对推理保守, 这条与模型强弱无关)。
+
+        action: (v4) 打算怎么做, 分号分隔 —— 对应【修复】
+        risk: 衡量【代价认知】—— reversible / costly / irreversible。
+            · 填 irreversible 会触发"不可逆操作先算代价"提示。
+            · ✅ "irreversible — 会删掉 backups/ 里的原始副本"
+
+        refs: 衡量【可核验性】—— 你的依据是不是**真在本地存在**。
+            · 填文件路径, 分号分隔。系统会**逐个检查存在性**(不看你声称读过没有)。
+            · ✅ "scripts/mcp_cls_tools.py;knowledge/05_CLS认知系统架构/认知系统迭代/incident-log.md"
+            · ❌ 填了不存在的路径 → 记 refs_missing, 并触发"以为有资料其实没有"提示。
+            · 下游用途: refs 可达率 = "是否真读过"的**客观**证据(自报不可信, 文件可达性可信)。
+
+        selfcheck: 衡量【预判认知】—— 你知不知道这次可能栽在哪。
+            · 答的是"我在这类事上以前怎么栽的", 不是"我会小心"。
+            · ✅ "上次改 mcp_cls_tools 漏改同名副本, 导致两处不一致(incident-log#91)"
+            · ❌ "会仔细检查" / "注意质量" —— 这不是预判, 是表态。
+
+        beh: 衡量【行为分类】—— 这次动手属于六类里的哪一类。
+            · 查 / 改 / 跑 / 判 / 说 / 收 六选一。
+            · 没传时系统从工具名+label 兜底推断, 但**自报更准** —— 尤其"判"和"收"
+              这两类没有对应工具, 系统推不出来。
+            · 下游用途: 行为分布熵 × 返工率 二维判读(卡住 = 低熵 + 高返工)。
+
+        kind: 衡量【事件连续性】—— 这是新起一件事、接着上一件、还是收尾。
+            · 新事 / 续上 / 收尾 三选一。
+            · 没传时系统按相邻声明的文本相似度推断(弱信号, 阈值难定)。
+            · 下游用途: 连续"续上"×N → 判"5+步无进展" → 提醒换角度重定义问题。
 
     Returns:
-        JSON: {status, step: dict, conflict_warning: str | None}
+        JSON: {status, step, last_window, conflict_warning?, intent_stream?, cards_hint?,
+               quality_warning?, grounding_hint?}
+        quality_warning: 缺 intent/basis 时返回(本次声明接受但不计入分析; 连续3次将拒绝)
+        grounding_hint:  basis_kind=memory 或 refs 路径不存在时返回(建议先调研再答)
     """
     step_path = PROJECT_ROOT / "data" / "state" / "cog_step.json"
     result = {"status": "ok"}
     started = time.time()
 
+    # ═══ v5 认知层字段质量闸门 (@add 2026-09-15 maintainer批) ═══════════════════
+    # maintainer定: **认知层无法简单分析的动机, 必须强制填, 不填就 error**。
+    #   区分对待: 能自动分析的用推导(beh 从工具名、refs 从 file_path), 不该让 AI 填;
+    #   认知层的(intent=我要做什么 / basis=凭什么 / selfcheck=预判哪里错)分析不出来, 才强制。
+    # ⚠️ 风险: 本函数是写操作的**门禁票据**, 硬拒绝会死锁 —— AI 写不了文件(incident-log#87 同族)。
+    #   ⇒ 照抄项目既有先例 rulebook.json#delivery_qwen_gate 的 "warn 级别, 3 次违规后升 deny":
+    #     第 1~2 次缺 → 接受声明 + 明确警告; 同一窗口连续 3 次 → 拒绝。
+    #   豁免: phase=="闲聊" (v3.3 已有"闲聊声明不带认知义务"语义)。
+    #   清零: 任何一次合格声明即把该窗口计数归零。
+    # ══════════════════════════════════════════════════════════════════════
+    _cog_missing = [k for k, v in (("intent", intent), ("basis", basis)) if not str(v or "").strip()]
+    _is_chat = str(phase).strip() == "闲聊"
+    _qpath = PROJECT_ROOT / "data" / "state" / "cog_step_quality.json"
+    if not _is_chat:
+        _q = {}
+        try:
+            if _qpath.exists():
+                _q = json.loads(_qpath.read_text(encoding="utf-8")) or {}
+        except Exception:
+            _q = {}
+        _qkey = _cog_window_id(window_id)
+        if _cog_missing:
+            _streak = int((_q.get("streak") or {}).get(_qkey, 0)) + 1
+            _q.setdefault("streak", {})[_qkey] = _streak
+            _q["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+            try:
+                _qpath.parent.mkdir(parents=True, exist_ok=True)
+                _qpath.write_text(json.dumps(_q, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+            if _streak >= 3:
+                return json.dumps({
+                    "status": "error",
+                    "error": f"认知层字段缺失({'/'.join(_cog_missing)}), 本窗口已连续 {_streak} 次未填。",
+                    "why": "maintainer定: 认知层无法简单分析的动机必须强制声明(不填就 error)。"
+                           "能自动分析的(beh 从工具名 / refs 从 file_path)已改为推导, 不该由你填; "
+                           "intent/basis 是分析不出来、只能由你声明的。",
+                    "how": '重发声明并带上: intent="我要做什么" basis="我凭什么认为该这么做"'
+                           '(可选 selfcheck="我预判哪里会错")。若这轮是闲聊, 传 phase="闲聊" 即豁免。',
+                    "note": "声明未被写入 —— 补全后重试不会丢东西。",
+                }, ensure_ascii=False)
+            result["quality_warning"] = (
+                f"⚠️ 缺认知层字段({'/'.join(_cog_missing)}): 本次声明已接受, 但不计入意图流分析。"
+                f"同一窗口连续 3 次将拒绝声明(当前 {_streak}/3)。phase=\"闲聊\" 可豁免。")
+        else:
+            try:
+                if (_q.get("streak") or {}).get(_qkey):
+                    _q["streak"][_qkey] = 0
+                    _q["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+                    _qpath.write_text(json.dumps(_q, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
     locked = _cog_lock("cog_step")
     try:
         existing, last_window = _cog_read(step_path)
 
+        # v3.3: phase 接受 "闲聊" 字符串 — 闲聊声明不带认知义务, 语义路由按此跳过强制注入
         step = {
             "version": 2,
             "phase": phase,
@@ -2389,15 +2571,18 @@ def cog_step_declare(
             "declared_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
             "previous_phase": previous_phase or (existing.get("label", "") if isinstance(existing, dict) else ""),
             "description": description,
+            "source": source or "",
+            "category": category or "",
+            "reasoning": reasoning or "",
             "ttl_seconds": 300,
-            "_meta": _cog_make_meta(),
+            "_meta": _cog_make_meta(window_id),
         }
         _cog_atomic_write(step_path, step)
         result["step"] = step
         result["last_window"] = last_window
 
-        if last_window and last_window != _COG_WINDOW_ID:
-            result["conflict_warning"] = f"⚠️ 上一步由窗口 {last_window} 声明，当前窗口 {_COG_WINDOW_ID}"
+        if last_window and not _SI.matches(last_window, _cog_window_id()):
+            result["conflict_warning"] = f"⚠️ 上一步由窗口 {last_window} 声明，当前窗口 {_cog_window_id(window_id)}"
             _cog_telemetry("cog_step_declare", "conflict", duration_ms=int((time.time()-started)*1000),
                            lock_status="acquired", error=f"window_conflict: {last_window}")
     finally:
@@ -2405,6 +2590,250 @@ def cog_step_declare(
 
     _cog_telemetry("cog_step_declare", f"phase_{phase}", duration_ms=int((time.time()-started)*1000),
                    lock_status="acquired" if locked else "wait")
+
+    # ── window_id fail-loud (@add 2026-09-12 maintainer批) ──────────────────────
+    # 实测 (2026-09-12): 账本里另一 DSH 会话的声明全部落 window=unknown —— 它没传 window_id,
+    #   而常驻 MCP 进程的 env 是 **spawn 时**固定的, 与"现在谁在调用"无关
+    #   → 对这条路径 env 推断在原理上不可用(会指错对象)。
+    #   session_identity 的失败取向是 fail-closed: **宁可少认, 不可错认** —— 所以
+    #   ① 绝不用 env 盲猜调用方(那会把 spawner 当调用方, 比 unknown 更危险)
+    #   ② 改成"漏传必须可见": 把 09-09 说的"约定"变成机制。
+    if not str(window_id or "").strip() and _COG_DEFAULT_WINDOW == "":
+        result["window_warning"] = (
+            "⚠️ 未传 window_id, 且本进程无法从环境推断(常驻 MCP 进程的 env 是 spawn 时的) "
+            "→ 本次记录会落 window=unknown, 多窗口将混在一起无法区分。"
+            "请传 window_id=\"dsh:<你的 session id>\" 或 \"cc:<uuid>\"。")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # v4 意图流 (@add 2026-09-12 maintainer批)
+    # 把"自报的意图"从【瞬时门禁票据】升级为【append-only 流】。
+    #   动机: cog_step 是全系统唯一的意图通道，但 27 个读取者里 25 个只校验它过没过期
+    #         —— 等于把一份自传当门禁卡用。意图在整段任务里连续，不该只有 300s 寿命。
+    #   用途: 后续注入按 l1(工作类型) 取该类教训; hits 记该声明自带的缺陷倾向。
+    #   边界: 只驱动提示/注入，不驱动禁止（禁止必须基于可观测行为）。
+    #         理由不是防作弊（AI 不会恶意工作），而是防"真诚的错报"
+    #         —— incident-log#33/#54 都是 AI 真心相信自己做了。
+    #   成本: 纯规则映射，零模型调用（本函数本就在每次 Write/Edit 前跑，不能加延迟）。
+    #   失败: 整块 try/except 吞掉 —— 意图流绝不阻塞门禁。
+    # ═══════════════════════════════════════════════════════════════════
+    try:
+        _L1_MAP = (
+            (("编码", "路径", "utf", "乱码", "gbk", "cwd", "转义"), "encoding_path"),
+            (("进程", "句柄", "daemon", "守护", "conhost", "僵尸", "孤儿", "端口"), "process_handle"),
+            (("磁盘", "盘符", "空间", "清理", "缓存", "临时文件"), "disk_drive"),
+            (("代理", "proxy", "中间层", "网关", "转发"), "proxy_middleware"),
+            # @fix 2026-09-12 自测抓出: 原写 "声明" 太泛(几乎每次声明都命中), 改为具体术语
+            (("注入", "闸门", "hook", "gate", "门禁", "cog_step", "cog-step"), "injection_gate"),
+            (("数据", "分析", "实验", "谱", "探针", "文献", "论文"), "data_authenticity"),
+            # @fix 2026-09-12 自测抓出: 原写裸 "step" 会误命中 "cog_step" → 改成 "stp"
+            (("cad", "build123d", "freecad", "建模", "装配", "几何", "榫卯", "stp", "nx "), "cad_sim"),
+            (("模型", "配置", "路由", "effort", "api", "token", "计费"), "config_route"),
+            (("环境", "宿主", "升级", "安装", "skill", "目录"), "env_host"),
+        )
+        _txt = " ".join([str(label), str(intent), str(description)]).lower()
+        _l1 = [c for _kws, c in _L1_MAP if any(_k.lower() in _txt for _k in _kws)]
+
+        _bl = str(basis or "")
+        if any(_k in _bl for _k in ("maintainer", "张maintainer", "裁决", "人类确认", "用户确认")):
+            _basis_kind = "human_confirmed"
+        elif any(_k in _bl for _k in ("实测", "跑过", "测得", "复算", "grep", "日志", "验证过")):
+            _basis_kind = "hard_gate"
+        elif any(_k in _bl for _k in ("我记得", "通常", "应该", "大概", "可能", "似乎", "我以为", "经验上")):
+            _basis_kind = "memory"
+        elif _bl.strip():
+            _basis_kind = "stated"
+        else:
+            _basis_kind = "none"
+
+        _refs = [r.strip() for r in str(refs or "").replace(",", ";").split(";") if r.strip()]
+        _missing = []
+        for _r in _refs:
+            _rp = Path(_r) if Path(_r).is_absolute() else (PROJECT_ROOT / _r)
+            if not _rp.exists():
+                _missing.append(_r)
+
+        _hits = []
+        # @fix 2026-09-12 (真实数据当场打脸): 原写 in ("memory","none") → 只要用旧参数调用
+        #   (不填 basis)就被判成"未验证假设"。当天账本 4 条里 3 条是这种误报 —— 它们只是没填 basis。
+        #   "没填" ≠ "凭记忆": none 只记事实(供统计"多少声明没给依据"), 不判缺陷。
+        if _basis_kind == "memory":
+            _hits.append("unverified_assumption")
+        if _missing:
+            _hits.append("unverified_assumption:no_primary_source")
+        if any(_k in str(intent) for _k in ("新建", "创建", "加一个", "写一个", "搭一个", "新轮子")):
+            _hits.append("sunk_cost:先举证问题仍存在")
+        if str(risk).lower() in ("irreversible", "不可逆"):
+            _hits.append("cost_mismatch:不可逆操作先算代价")
+
+        # ── v6 本地无依据提示 (@add 2026-09-15 maintainer批, 第1期判断项②) ──────────
+        # maintainer定: **对推理保守一点 —— 本地没资料时先调研再答**, 而且这条**与模型强弱无关**
+        #   (换任何模型, "本地没资料"这个事实不变; 绑证据不绑能力)。
+        # 判据只用【明确信号】, 不认 basis_kind="none" —— 那是"没填"不是"凭记忆"(今日已修过该误报):
+        #   ① basis_kind == "memory"     AI 自己承认凭记忆
+        #   ② refs 非空 但 refs_missing 非空   声明了依据却不存在("以为有资料其实没有")
+        # ⇒ 两个信号上面都已算好(_basis_kind/_missing), 这里只是把【算出来的】翻译成【给 AI 看的】。
+        # @add 2026-09-17 maintainer批: ②③ 补**审计落点**(函数内定义, 两处判据共用)。
+        #   @why 接线自查发现: 这两条判据的触发只塞在工具返回值里, **不进任何日志** ——
+        #     于是"它到底工作过没有"只能去翻会话原文; 而翻的过程中还会被观察者效应反复污染
+        #     (每写一个扫描器, 它就变成被扫描日志的一部分, 写了 5 版才找到干净判据)。
+        #     实测靠翻原文才确认 ② 在 2026-09-15 13:57 真触发过一次。
+        #   ⇒ 落一条最小记录, 让 ②③ 与 ①(卡住, 有 gate_audit) 一样可复盘。
+        def _hint_audit(_kind, _extra=None):
+            try:
+                _p = PROJECT_ROOT / "data" / "state" / "hint_audit.jsonl"
+                _p.parent.mkdir(parents=True, exist_ok=True)
+                _rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "kind": _kind, "phase": phase, "label": str(label)[:60]}
+                _rec.update(_extra or {})
+                with open(_p, "a", encoding="utf-8") as _f:
+                    _f.write(json.dumps(_rec, ensure_ascii=False) + "\n")
+            except Exception:
+                pass                      # 审计失败不阻塞声明(与全文件 fail-quiet 同风格)
+
+        if _basis_kind == "memory" or _missing:
+            _why = ("basis_kind=memory（你自述凭记忆）" if _basis_kind == "memory"
+                    else f"refs 声明的路径不存在: {', '.join(_missing[:2])}")
+            result["grounding_hint"] = (
+                f"【消息】无本地依据(CLS): {_why}\n"
+                "【为什么】本地没有资料时先调研再答, 别凭记忆硬答 —— **这条与模型强弱无关**"
+                "(换任何模型, '本地有没有资料'这个事实不变)。\n"
+                "【级别】参考 — 若你确认这是常识或已读过的内容, 忽略即可。\n"
+                "【内容】优先顺序: ①knowledge/ 搜相关文件 ②WebFetch 官方文档 ③papers-mcp 找原文"
+            )
+            _hint_audit("grounding", {"basis_kind": _basis_kind, "n_missing": len(_missing)})
+
+        # ── v7 盘旋迹象提示 (@add 2026-09-15 maintainer批, 第1期判断项③) ─────────────
+        # maintainer定名: **不叫"疲劳", 叫"盘旋"**。
+        #   原设计猜的是"用户疲劳"(信号: 用户消息从段落变短语)。实测 1 正 3 反, 不成立;
+        #   而且maintainer自己说"和 AI 聊天还是比较平静的"(方差小, 不值得为它维护追踪机制)。
+        #   真正可观测、且真有害的是【协作的搜索空间坍缩】= maintainer原话:
+        #     "漫长的推理会削弱 AI 的注意力, 过于陷入问题的某个角落"
+        #   ⇒ **谁都没疲劳, 是"在局部里待太久"。**
+        # 判据(**复用 path_entropy 的二维表, 不新建**): 低熵 + 高返工 = 卡住了。
+        #   数据源 = state/trajectory.json 的 stats(trajectory_materialize 每 30 分钟物化;
+        #   其中 beh/task_id 由 behavior_derive 从工具调用推导 —— 见该文件头)。
+        # ⚠️ 为什么必须外部注入: 陷入局部时"进展感"与"实际进展"脱钩, 且**不会自己暴露**
+        #   (不像 bug 有报错、不像失败有返回值) —— 它会持续消耗资源, 还越投入越确信接近答案。
+        # 内容原则(过注入三原则第 2 问"有增量吗"): 只给【统计事实】+【出口】, 不给结论/命令 ——
+        #   统计量主 AI 自己算不出来(要跨声明聚合)所以增量高; 而"换个角度"这种它自己想得到。
+        #   ★ "逃课"是刻意保留的出口: 明确允许放弃当前路径 —— 解 sunk_cost
+        #   (incident-log里 sunk_cost 有 16 条, 此前只有文字规则、没有任何闸门/出口)。
+        # 🔧 阈值与口径 (@rev 2026-09-17 maintainer批): **从"一生平均"改成"最近 SPIN_N 条滑窗"**。
+        #   @why 原口径读 stats.rework_rate = 累计返工/累计声明 = **一生的平均值**。实测(复刻校验过):
+        #     历史区间只有 0.12~0.321, 阈值 0.5 **永远够不到** —— 分子分母同时涨, 量只会越来越钝。
+        #     观测到的事件数: rr>=0.5 → 1 次; rr>=0.4 → **2 次**(只看 rr 是 14 次, 熵条件砍掉 86%,
+        #     说明熵那侧不是冗余的)。⇒ 取 **RR>=0.4(观测 p90)** 且 H<=0.75*Hmax。
+        #   ★ 事件闸: 滑窗每步只挪一条声明, 同一段盘旋会**连续为真**好几个窗口
+        #     (实测 0.4 的 6 个为真窗口其实只是 2 起事件)。所以只在 **false→true 的边沿**提醒 ——
+        #     一次盘旋只响一次, 否则就是注入疲劳。状态存 data/state/spin_state.json。
+        try:
+            _tj = json.loads((PROJECT_ROOT / "state" / "trajectory.json").read_text(encoding="utf-8"))
+            _sr = (_tj.get("stats") or {}).get("recent") or {}
+            _h, _hmax = _sr.get("h_task"), _sr.get("h_task_max")
+            _rr, _ev = _sr.get("rework_rate"), (_sr.get("events") or 0)
+            _fire = bool(_h is not None and _hmax and _rr is not None and _ev >= 8
+                         and _rr >= 0.4 and _h <= _hmax * 0.75)
+            _sp = PROJECT_ROOT / "data" / "state" / "spin_state.json"
+            try:
+                _prev = bool(json.loads(_sp.read_text(encoding="utf-8")).get("in_episode"))
+            except Exception:
+                _prev = False                      # 没有状态文件 = 不在盘旋中(冷启动)
+            if _fire and not _prev:
+                _bd = " ".join(f"{k}×{v}" for k, v in (_sr.get("beh_dist") or {}).items())
+                result["spinning_hint"] = (
+                    f"【消息】盘旋迹象(CLS): 最近 {_ev} 步里 {_sr.get('tasks')} 个任务 / "
+                    f"返工 {_sr.get('rework_steps')} 步(返工率 {_rr:.0%}); 行为分布 {_bd}; 熵 {_h}(上限 {_hmax})\n"
+                    "【为什么】在同一个框架里继续投入不会到达新地方 —— "
+                    "投入越多越确信『快好了』, 但那是投入感不是进展。而且这种状态**不会自己暴露**(不像报错)。\n"
+                    "【级别】参考 — 无需回应。\n"
+                    "【内容】先自查一句: 最近 10 步里有几步带来了新的外部信息? 然后三个出口(按成本): "
+                    "①引入外部信息(WebSearch/官方文档/论文) ②换执行者(子代理独立试) "
+                    "③问maintainer换方向, 或直接跳过这一段 —— **逃课是被允许的**, "
+                    "但请记一条: 跳过了什么/为什么/留了什么坑"
+                )
+                _hint_audit("spinning", {"rework_rate": _rr, "h_task": _h, "h_task_max": _hmax,
+                                         "events": _ev, "window": "recent", "rr_th": 0.4,
+                                         "h_th": round(_hmax * 0.75, 3)})
+            if _fire != _prev:                     # 只在边沿变化时落盘, 少写文件
+                try:
+                    _sp.write_text(json.dumps({"in_episode": _fire, "rework_rate": _rr,
+                                               "ts": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                                              ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 行为/事件 (v4.1): 自报优先, 规则兜底 —— 让未传新参数的旧调用方也有可计数的分类。
+        # 不用 re 模块(避免 import 依赖风险, 本块在每次 Write/Edit 前跑, 失败即静默丢数据)。
+        _beh = str(beh or "").strip()
+        if _beh not in ("查", "改", "跑", "判", "说", "收"):
+            _beh = ""
+            _bt = " ".join([str(label), str(intent), str(action)])
+            for _kws, _c in ((("读", "查", "搜", "看", "grep", "检索", "Read"), "查"),
+                             (("写", "改", "编辑", "重构", "修", "删"), "改"),
+                             (("跑", "测", "执行", "编译", "启动", "test"), "跑"),
+                             (("判", "选", "裁决", "确认"), "判"),
+                             (("交付", "汇报", "报告", "文档"), "说"),
+                             (("归档", "清理", "提交", "收尾", "备份"), "收")):
+                if any(_k in _bt for _k in _kws):
+                    _beh = _c
+                    break
+        _kind = str(kind or "").strip()
+        if _kind not in ("新事", "续上", "收尾"):
+            _kind = ""
+
+        _stream = PROJECT_ROOT / "data" / "state" / "intent_stream.jsonl"
+        with _stream.open("a", encoding="utf-8") as _f:
+            _f.write(json.dumps({
+                "ts": step["declared_at"], "phase": phase, "label": label,
+                "l1": _l1, "basis_kind": _basis_kind,
+                "refs": _refs, "refs_missing": _missing, "hits": _hits,
+                "beh": _beh, "kind": _kind,
+                # @add 2026-09-15: 认知层字段缺失的声明标 quality=incomplete
+                #   供下游过滤 —— 缺 intent/basis 的记录不参与"按工作类型取教训"等分析。
+                "quality": ("incomplete" if _cog_missing else "ok"),
+                "intent": str(intent)[:200], "risk": str(risk)[:20],
+                "selfcheck": str(selfcheck)[:200],
+                "window": _cog_window_id(window_id),
+            }, ensure_ascii=False) + "\n")
+        result["intent_stream"] = {"l1": _l1, "basis_kind": _basis_kind,
+                                   "refs_missing": _missing, "hits": _hits}
+    except Exception:
+        pass
+
+    # @add 2026-09-05 maintainer定: 声明返回值轻量hint — 声明即检索(词面, 零模型零延迟)。
+    # 检索源=v2.1坑卡库trigger_when; 每条≤40字×3条; 作用=提示存在性(全文卡走pending机制)。
+    try:
+        from retrieval_pipeline import rank as _rp_rank
+        _kg = PROJECT_ROOT / "knowledge" / "知识图谱" / "kg_cards.json"
+        _cards = {k: c for k, c in json.loads(_kg.read_text(encoding="utf-8-sig")).get("cards", {}).items()
+                  if isinstance(c, dict) and c.get("schema") == 2 and c.get("trigger_when")}
+        _query = " ".join(filter(None, [label, description, category]))
+        _top, _n = _rp_rank(_query, _cards, top=3)
+        if _top:
+            _hints = []
+            for _sc, _k, _c in _top:
+                if _sc < 2:
+                    continue  # 最低重叠2词(与retrieval_pipeline同阈值, 防蹭命中)
+                _d = str(_c.get("boundary") or _c.get("date") or "")[:10]
+                _t = str(_c.get("trigger_when") or "")[:40]
+                _les = str(_c.get("wrong_logic") or _c.get("logic") or "")[:30]
+                _hints.append(f"[{_d}] {_t}: {_les}")
+            if _hints:
+                result["cards_hint"] = "类似工作历史(声明即检索, 详情可查knowledge): " + " | ".join(_hints)
+                # @add 2026-09-17 maintainer批: hint真实交付的卡异步写回hit_count(第五环点火)。
+                # daemon线程零延迟 — declare在每次Write前跑, 本函数注释明令"不能加延迟"。
+                try:
+                    import threading as _th
+                    from retrieval_pipeline import bump_hits as _rp_bump
+                    _th.Thread(target=_rp_bump, args=([_k for _sc, _k, _c in _top if _sc >= 2],),
+                               daemon=True).start()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -2961,14 +3390,14 @@ def cls_activation_lab(action: str = "inject", lines: int = 30) -> dict:
 @mcp.tool(
     name="cls-param-extract",
     description="EP 参数提取混合管线 — 规则筛句 → 自产模型 ep-param 提取 → 锚定兜底。"
-    "输入<传感器>/实验报告文本，输出参数 JSON（flow/Ib/B/eff_dim/mode 等）。"
+    "输入探针/实验报告文本，输出参数 JSON（flow/Ib/B/eff_dim/mode 等）。"
     "无参数文本直接返回空对象（零模型调用零编造）。",
 )
 def param_extract(text: str) -> dict:
     """从 EP 实验文本提取参数（混合管线，自产模型 ep-param）。
 
     Args:
-        text: <传感器>/实验报告文本段落
+        text: 探针/实验报告文本段落
 
     Returns:
         {"ok": True, "params": {...}, "model_called": bool}
@@ -3118,15 +3547,67 @@ def consult(explanation: str) -> str:
 
 
 @mcp.tool(
+    name="cls-card-supersede",
+    description="标记过时知识卡 (2026-09-09 maintainer需求: AI 实战发现旧结论被推翻时当场标记, 不等每日任务)。"
+    "被标记的卡在知识检索中降权/排除, 证伪理由入库供审计。AI 在实战中发现某条历史结论错误时调用本工具。",
+)
+def card_supersede(
+    card_key: str,
+    reason: str,
+    new_conclusion: str = "",
+) -> str:
+    """标记过时知识卡。
+
+    Args:
+        card_key: 卡片的 file 键(kg_cards.json 里的键, 即源文件相对路径)
+        reason: 证伪理由 — 错在哪/被什么推翻, 一到两句(必填, 无理由不标记)
+        new_conclusion: 新的正确结论(可选, 有则一并记录)
+
+    Returns:
+        JSON: {status, key, marked_at, note}
+    """
+    kg_path = PROJECT_ROOT / "knowledge" / "知识图谱" / "kg_cards.json"
+    if not card_key or not reason:
+        return json.dumps({"error": "card_key 与 reason 必填"}, ensure_ascii=False)
+    try:
+        data = json.loads(kg_path.read_text(encoding="utf-8-sig"))
+        cards = data.get("cards", {})
+        if card_key not in cards:
+            # 容错: 允许传 basename 模糊匹配唯一卡
+            cands = [k for k in cards if k.endswith(card_key) or card_key in k]
+            if len(cands) == 1:
+                card_key = cands[0]
+            else:
+                return json.dumps({"error": f"card_key 未找到(候选{len(cands)}个), 请传完整键"}, ensure_ascii=False)
+        c = cards[card_key]
+        c["superseded_by"] = json.dumps({
+            "reason": reason[:300], "new_conclusion": new_conclusion[:300],
+            "by": os.environ.get("CLAUDE_CODE_SESSION_ID", "unknown")[:16],
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S")}, ensure_ascii=False)
+        c["superseded_at"] = time.time()
+        tmp = kg_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, kg_path)
+        # 审计行(与卡片库分离, 防大文件写坏丢史)
+        with open(PROJECT_ROOT / "knowledge" / "知识图谱" / "card_supersede_log.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "key": card_key,
+                                "reason": reason[:200], "new_conclusion": new_conclusion[:200]}, ensure_ascii=False) + "\n")
+        return json.dumps({"status": "superseded", "key": card_key[:60], "note": "已标记过时, 检索时降权"},
+                          ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+@mcp.tool(
     name="cross-knowledge-probe",
     description="本地跨界知识联想 (管线Research口专用·maintainer2026-08-27定) — 输入设计需求/任务原文, "
-    "后台先把任务抽到功能本质层(手机→人体工学式联想)发4条通用<传感器>, "
+    "后台先把任务抽到功能本质层(手机→人体工学式联想)发4条通用探针, "
     "再对知识卡片做 历史相关/近似相关/跨界相关 三类精选(跨界≤2张且强制同构半句), "
     "返回四段信封文本。[跨界]卡=灵感非约束。返回空串=无相关或后端不可用, 调用方直接跳过勿重试。"
     "CAD管线Research阶段在WebSearch外搜之前先调本工具。",
 )
 def cross_knowledge_probe(task: str) -> str:
-    """跨界知识联想查询: 功能本质<传感器> → 卡片总线跨域匹配。
+    """跨界知识联想查询: 功能本质探针 → 卡片总线跨域匹配。
 
     Args:
         task: 设计需求或任务描述原文 (≥8字)

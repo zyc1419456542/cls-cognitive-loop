@@ -30,7 +30,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 ITER_DIR = ROOT / "knowledge" / "05_CLS认知系统架构" / "认知系统迭代"
+MIRROR_DIR = ROOT / "认知系统迭代"          # 根目录镜像(maintainer日常入口), record 双写保持完备
 INDEX_FILE = ITER_DIR / "INDEX.md"
+MIRROR_INDEX = MIRROR_DIR / "INDEX.md"
 
 # 核心组件列表 (改动≥3个=大修)
 CORE_COMPONENTS = {
@@ -45,15 +47,16 @@ CORE_COMPONENTS = {
 
 
 def _next_iter_number(iter_type):
-    """获取下一个iter编号"""
-    d = ITER_DIR / iter_type
-    if not d.exists():
-        return 1
+    """获取下一个iter编号(两处目录都取最大值, 防止单边手写文件后撞号)"""
     nums = []
-    for f in d.glob("iter-*.md"):
-        m = re.match(r"iter-(\d+)", f.name)
-        if m:
-            nums.append(int(m.group(1)))
+    for base in (ITER_DIR, MIRROR_DIR):
+        d = base / iter_type
+        if not d.exists():
+            continue
+        for f in d.glob("iter-*.md"):
+            m = re.match(r"iter-(\d+)", f.name)
+            if m:
+                nums.append(int(m.group(1)))
     return max(nums, default=0) + 1
 
 
@@ -153,7 +156,13 @@ def record(args):
     print(f"   文件: {fpath}")
     print(f"   类型: {iter_type} (核心组件: {sum(1 for c in components if c in CORE_COMPONENTS)}/{len(components)})")
 
-    # 自动更新INDEX
+    # 双写根目录镜像(maintainer要求: 两处始终完备, 免人工搬运)
+    m = MIRROR_DIR / iter_type
+    m.mkdir(parents=True, exist_ok=True)
+    (m / fname).write_text(fpath.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"   镜像: {m / fname}")
+
+    # 自动更新INDEX(两边)
     update_index()
     return fpath
 
@@ -214,7 +223,43 @@ def update_index():
             lines.append(f"| {e.get('iter','-')} | {e.get('date','-')} | {e.get('task','-')} | {e.get('status','-')} | {note} |")
 
     INDEX_FILE.write_text("\n".join(lines), encoding="utf-8")
-    print(f"📋 INDEX.md 已更新 ({len(entries)} 条)")
+    MIRROR_INDEX.write_text("\n".join(lines), encoding="utf-8")   # INDEX 也双写
+    print(f"📋 INDEX.md 已更新 ({len(entries)} 条, 双写两处)")
+
+
+def sync(args):
+    """一次性补齐: knowledge侧与根目录镜像互相补缺(record 双写之前的历史积靠此愈合)"""
+    copied = 0
+    for iter_type in ["大修", "小修"]:
+        a_dir, b_dir = ITER_DIR / iter_type, MIRROR_DIR / iter_type
+        if a_dir.exists():
+            b_dir.mkdir(parents=True, exist_ok=True)
+            for f in a_dir.glob("iter-*.md"):
+                if not (b_dir / f.name).exists():
+                    (b_dir / f.name).write_text(f.read_text(encoding="utf-8"),
+                                                encoding="utf-8")
+                    print(f"  knowledge -> 镜像: {iter_type}/{f.name}")
+                    copied += 1
+        if b_dir.exists():
+            a_dir.mkdir(parents=True, exist_ok=True)
+            for f in b_dir.glob("iter-*.md"):
+                if not (a_dir / f.name).exists():
+                    (a_dir / f.name).write_text(f.read_text(encoding="utf-8"),
+                                                encoding="utf-8")
+                    print(f"  镜像 -> knowledge: {iter_type}/{f.name}")
+                    copied += 1
+    # 同名但内容不同的以knowledge为准覆盖镜像
+    for iter_type in ["大修", "小修"]:
+        a_dir, b_dir = ITER_DIR / iter_type, MIRROR_DIR / iter_type
+        if a_dir.exists() and b_dir.exists():
+            for f in a_dir.glob("iter-*.md"):
+                dst = b_dir / f.name
+                if dst.exists() and dst.read_text(encoding="utf-8") != f.read_text(encoding="utf-8"):
+                    dst.write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+                    print(f"  覆盖(knowledge为准): {iter_type}/{f.name}")
+                    copied += 1
+    update_index()
+    print(f"✅ sync 完成: {copied} 处变更")
 
 
 def recent(args):
@@ -275,6 +320,7 @@ def main():
     rec.add_argument("--severity", default="info", help="严重度")
 
     sub.add_parser("index", help="更新INDEX.md")
+    sub.add_parser("sync", help="两处目录互相补缺(knowledge为准覆盖同名)")
 
     recent_cmd = sub.add_parser("recent", help="最近记录")
     recent_cmd.add_argument("-n", type=int, default=10, help="显示条数")
@@ -290,6 +336,8 @@ def main():
         record(args)
     elif args.command == "index":
         update_index()
+    elif args.command == "sync":
+        sync(args)
     elif args.command == "recent":
         recent(args)
     else:
